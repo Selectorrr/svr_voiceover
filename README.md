@@ -74,8 +74,8 @@
 - **entrypoint.py:** Точка запуска приложения.
 - **AudioProcessor.py:** Обработка аудио (загрузка, нормализация, конвертация).
 - **CsvProcessor.py:** Обработка CSV-файлов, поиск изменений и фильтрация записей.
-- **PipelineModule.py:** Основной модуль, объединяющий все процессы озвучки. [&#8203;:contentReference[oaicite:6]{index=6}&#8203;:contentReference[oaicite:7]{index=7}]
-- **SpeakerProcessor.py:** Формирование и кеширование сэмплов тембра для говорящих. [&#8203;:contentReference[oaicite:8]{index=8}&#8203;:contentReference[oaicite:9]{index=9}]
-- **TextProcessor.py:** Выбор оптимального варианта текста для озвучки. [&#8203;:contentReference[oaicite:10]{index=10}&#8203;:contentReference[oaicite:11]{index=11}]
+- **PipelineModule.py:** Основной модуль, объединяющий все процессы озвучки.
+- **SpeakerProcessor.py:** Формирование и кеширование сэмплов тембра для говорящих.
+- **TextProcessor.py:** Выбор оптимального варианта текста для озвучки.
 
 ---
