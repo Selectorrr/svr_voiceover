@@ -1,0 +1,8 @@
+/workspace/
+/tmp/
+/.cache/
+/.idea/
+/.nv/
+*.wav
+*.onnx
+/.env

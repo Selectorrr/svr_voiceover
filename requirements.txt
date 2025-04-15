@@ -1,0 +1,7 @@
+git+https://github.com/Selectorrr/svr_tts.git
+numpy
+librosa
+pydub
+pyloudnorm
+soundfile
+tqdm

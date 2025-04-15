@@ -1,0 +1,7 @@
+workspace
+Dockerfile
+.idea
+.git
+.cache
+example
+.nv
