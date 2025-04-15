@@ -21,7 +21,7 @@
    Имена CSV-файлов могут содержать номер версии (например, `voiceover1.csv`, `voiceover2.csv`), чтобы приложение могло отслеживать изменения.
 
 2. **Запуск приложения:**
-   - Переметите файл example/run.cmd в директорию с файлами (рядом с csv)
+   - Переместите файл example/run.cmd в директорию с файлами (рядом с csv)
    - Запустите двойным кликом и следуйте интрукции
 
 3. **Результат:**
@@ -71,9 +71,9 @@
 
 ## Полезные ссылки внутри приложения
 
-- **entrypoint.py:** Точка запуска приложения. [&#8203;:contentReference[oaicite:0]{index=0}&#8203;:contentReference[oaicite:1]{index=1}]
-- **AudioProcessor.py:** Обработка аудио (загрузка, нормализация, конвертация). [&#8203;:contentReference[oaicite:2]{index=2}&#8203;:contentReference[oaicite:3]{index=3}]
-- **CsvProcessor.py:** Обработка CSV-файлов, поиск изменений и фильтрация записей. [&#8203;:contentReference[oaicite:4]{index=4}&#8203;:contentReference[oaicite:5]{index=5}]
+- **entrypoint.py:** Точка запуска приложения.
+- **AudioProcessor.py:** Обработка аудио (загрузка, нормализация, конвертация).
+- **CsvProcessor.py:** Обработка CSV-файлов, поиск изменений и фильтрация записей.
 - **PipelineModule.py:** Основной модуль, объединяющий все процессы озвучки. [&#8203;:contentReference[oaicite:6]{index=6}&#8203;:contentReference[oaicite:7]{index=7}]
 - **SpeakerProcessor.py:** Формирование и кеширование сэмплов тембра для говорящих. [&#8203;:contentReference[oaicite:8]{index=8}&#8203;:contentReference[oaicite:9]{index=9}]
 - **TextProcessor.py:** Выбор оптимального варианта текста для озвучки. [&#8203;:contentReference[oaicite:10]{index=10}&#8203;:contentReference[oaicite:11]{index=11}]
