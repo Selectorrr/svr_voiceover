@@ -21,7 +21,7 @@ RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Устанавливаем зависимости и библиотеку (включая свою) через pip
-RUN pip install --no-cache-dir git+https://github.com/Selectorrr/svr_tts.git \
+RUN pip install --no-cache-dir svr_tts==0.2 \
     soundfile librosa pydub pyloudnorm
 
 # Скачиваем и устанавливаем vgmstream-cli
