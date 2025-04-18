@@ -5,3 +5,4 @@ pydub
 pyloudnorm
 soundfile
 tqdm
+appdirs

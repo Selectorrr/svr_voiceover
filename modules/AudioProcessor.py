@@ -6,16 +6,31 @@ from pathlib import Path
 
 import librosa
 import numpy
+import onnxruntime
 import pyloudnorm
 import soundfile
+from appdirs import user_cache_dir
+from huggingface_hub import hf_hub_download
 from pydub import AudioSegment
 
 
 class AudioProcessor:
-    def __init__(self, config):
+    def __init__(self, config, providers=None):
         self.tone_sample_len = config['tone_sample_len']
-        self.sound_file_formats = set(map(lambda i: f".{i}".lower(),soundfile.available_formats().keys()))
+        self.sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
+        if providers is None:
+            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        os.environ["TQDM_POSITION"] = "-1"
+        self.mos = onnxruntime.InferenceSession(
+            hf_hub_download(repo_id="selectorrrr/wav2vec2mos", filename="wav2vec2mos.onnx",
+                            cache_dir=self._get_cache_dir()), providers=providers)
+
         pass
+
+    def _get_cache_dir(self) -> str:
+        cache_dir = user_cache_dir("svr_voiceover", "SynthVoiceRu")
+        os.makedirs(cache_dir, exist_ok=True)
+        return cache_dir
 
     def _read_vg_in_memory(self, wem_file_path):
         # Создаем временный файл
@@ -100,41 +115,31 @@ class AudioProcessor:
         wave, sr = self._to_ndarray(segment)
         return wave, dBFS
 
-    def build_inference_audio(self, speaker_files):
-        """
-            Собирает сэмпл
-        """
-        segment = None
-        for speaker_file in speaker_files:
-            speaker_file_path = f"workspace/resources/{speaker_file}"
-            # Если длина сэмпла удовлетворяет мнимальной то перестаем искать файлы
-            if segment is not None and len(segment) >= self.tone_sample_len:
-                break
-            # читаем аудио файлы и склеиваем их в 1
-            wave_24k, _ = self.load_audio(speaker_file_path)
-            current_segment = self._to_segment(wave_24k, 24_000)
-            if segment is None:
-                segment = current_segment
-            else:
-                segment += current_segment
+    def build_speaker_sample(self, voice_path, wave_24k):
+        if voice_path.exists():
+            segment = AudioSegment.from_wav(voice_path)
+            if len(segment) >= self.tone_sample_len:
+                return self._to_ndarray(segment)[0]
+            segment += self._to_segment(wave_24k, 24_000)
+        else:
+            segment = self._to_segment(wave_24k, 24_000)
 
-        if segment is None:
-            # что-то пошло не так
-            raise ValueError("No valid speaker files found with matching MOS rate.")
-
-        # длина сэмпла должна быть минимум 1 секунда
+        segment = segment[:self.tone_sample_len]
         while len(segment) < 1000:
             segment += segment
+        voice_path.parent.mkdir(parents=True, exist_ok=True)
+        segment.export(voice_path, format="wav")
+        return self._to_ndarray(segment)[0]
 
-        # и не более максимальной
-        segment = segment[: self.tone_sample_len]
-
-        # с частотой 24khz это требование svr_tts
-        if segment.frame_rate != 24_000:
-            segment = segment.set_frame_rate(24_000)
-
-        wave_24k, _ = self._to_ndarray(segment)
-        return wave_24k
+    def calc_mos(self, wave, sr):
+        if sr != 16_000:
+            segment = self._to_segment(wave, sr)
+            segment = segment.set_frame_rate(16_000)
+            wave, sr = self._to_ndarray(segment)
+        x = wave[numpy.newaxis, :].astype(numpy.float32)
+        outs = self.mos.run(None, {"input_values": x})
+        mos = float(outs[0].reshape(-1).mean())
+        return mos
 
     @staticmethod
     def _to_segment(y, sr=24000):

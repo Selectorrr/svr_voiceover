@@ -17,3 +17,6 @@ MODEL_FILES = {
 }
 for key in MODEL_FILES.keys():
     hf_hub_download(repo_id=REPO_ID, filename=MODEL_FILES[key], cache_dir=cache_dir)
+
+hf_hub_download(repo_id="selectorrrr/wav2vec2mos", filename="wav2vec2mos.onnx",
+                cache_dir=user_cache_dir("svr_voiceover", "SynthVoiceRu"))

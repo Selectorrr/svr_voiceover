@@ -54,7 +54,7 @@ class PipelineModule:
         results = self._efficient_audio_generation(vo_items)
         return results
 
-    def _voice_over_record(self, records, speaker_records):
+    def _voice_over_record(self, records):
         """
             Озвучивает группу записей
         """
@@ -67,11 +67,8 @@ class PipelineModule:
             text, is_accented = self.text.get_text(record)
 
             # Возьмем все строки которые произносит этот персонаж для того что-б определить его тембр
-            s_records = speaker_records[record['speaker']]
-            speaker = record['speaker']
-
             # Подготовим сэмпл тембра голоса
-            style_wave_24k = self.speaker.get_speaker_style(speaker, s_records)
+            style_wave_24k = self.speaker.get_speaker_style(record['speaker'], raw_wave_24k)
             # соберем все у кучку
             vo_item = {
                 'text': text,
@@ -87,7 +84,7 @@ class PipelineModule:
         results = self._voice_over_items(vo_items)
 
         for dub, sr, i_path, i_dBFS in results:
-            #Восстановим громкость оригинального аудио
+            # Восстановим громкость оригинального аудио
             dub = self.audio.restore_loudness(dub, sr, i_dBFS)
             # Сохраняем итоговый файл
             dub_file = Path(f"workspace/dub/{i_path}")
@@ -101,18 +98,14 @@ class PipelineModule:
         todo_records, all_records = self.csv.find_changed_text_rows_csv()
 
         while len(todo_records):
-            # Для каждой строки нам надо будет определить голос, для этого сгруппируем строки по говорящему
-            speaker_records = {}
-            for record in all_records:
-                items = speaker_records.get(record['speaker'], [])
-                items.append(record)
-                speaker_records[record['speaker']] = items
+            todo_records = [o for o in todo_records if len(self.text.get_text(o)[0]) <= 420]
+            todo_records = sorted(todo_records, key=lambda d: len(set(self.text.get_text(d)[0])), reverse=True)
             # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
             batches = [todo_records[i:i + self.batch_size] for i in range(0, len(todo_records), self.batch_size)]
             for records in tqdm(batches, smoothing=0, desc="Общий прогресс"):
                 try:
                     # Озвучиваем группу
-                    self._voice_over_record(records, speaker_records)
+                    self._voice_over_record(records)
                 except AssertionError as e:
                     # Неисправимая ошибка, может кончился баланс, завершаем работу
                     print(e)
