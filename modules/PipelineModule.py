@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import librosa
 import numpy
 import soundfile
 from svr_tts import SVR_TTS
@@ -21,6 +22,7 @@ class PipelineModule:
         self.ext = config['ext']
         self.model = SVR_TTS(config['api_key'])
         self.batch_size = config['batch_size']
+        self.is_strict_len = config['is_strict_len']
         pass
 
     def _efficient_audio_generation(self, vo_items):
@@ -40,7 +42,19 @@ class PipelineModule:
                 continue
             # собираем результаты и одновременно сопоставляем с исходной громкостью и файлом
             # 22050 это фрейм рейт нейросети.
-            results.append((wave, 22050, vo_items[idx]['path'], vo_items[idx]['dBFS']))
+            vo_item = vo_items[idx]
+
+            # если длина аудио строго должна совпадать с оригиналом
+            if self.is_strict_len:
+                raw_len = len(vo_item['raw_wave_24k']) / 24_000
+                # уберем тишину тк это безболезненно
+                wave, _ = librosa.effects.trim(wave, top_db=40)
+                wave_len = len(wave) / 22050
+                rate = wave_len / raw_len
+                if rate > 1:
+                    # ускорим, но не сильнее чем на 50 процентов
+                    wave = self.audio.speedup(wave, 22050, min(1.5, rate), raw_len)
+            results.append((wave, 22050, vo_item['path'], vo_item['dBFS']))
         return results
 
     def _voice_over_items(self, vo_items):

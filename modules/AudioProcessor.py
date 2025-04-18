@@ -188,3 +188,16 @@ class AudioProcessor:
         segment = segment.apply_gain(dBFS - segment.dBFS)
         wave, sr = self._to_ndarray(segment)
         return wave
+
+    def speedup(self, wave, sr, ratio, max_len):
+        segment = self._to_segment(wave, sr)
+
+        memory_buffer = io.BytesIO()
+        # эксперементы показали что atempo дает наименьшие артефакты при ускорении
+        segment.export(memory_buffer, format='wav', parameters=["-af", f"atempo={ratio}"])
+        memory_buffer.seek(0)
+        wave, sr = soundfile.read(memory_buffer)
+        # обрезаем к оригиналу то что смогли ускорить
+        segment = self._to_segment(wave, sr)[:max_len * 1000]
+        wave, sr = self._to_ndarray(segment)
+        return wave
