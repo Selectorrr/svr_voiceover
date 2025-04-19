@@ -116,20 +116,31 @@ class AudioProcessor:
         return wave, dBFS
 
     def build_speaker_sample(self, voice_path, wave_24k):
+        new_seg = self._to_segment(wave_24k, 24_000)
         if voice_path.exists():
             segment = AudioSegment.from_wav(voice_path)
             if len(segment) >= self.tone_sample_len:
                 return self._to_ndarray(segment)[0]
-            segment += self._to_segment(wave_24k, 24_000)
+            end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
+            if not self._is_similar(end_slice, new_seg):
+                segment += new_seg
         else:
-            segment = self._to_segment(wave_24k, 24_000)
-
+            segment = new_seg
         segment = segment[:self.tone_sample_len]
         while len(segment) < 1000:
             segment += segment
+
         voice_path.parent.mkdir(parents=True, exist_ok=True)
         segment.export(voice_path, format="wav")
         return self._to_ndarray(segment)[0]
+
+    def _is_similar(self, seg1: AudioSegment, seg2: AudioSegment, thresh=0.9) -> bool:
+        a = numpy.array(seg1.get_array_of_samples(), dtype=float)
+        b = numpy.array(seg2.get_array_of_samples(), dtype=float)
+        min_len = min(len(a), len(b))
+        a, b = a[:min_len], b[:min_len]
+        sim = numpy.dot(a, b) / (numpy.linalg.norm(a) * numpy.linalg.norm(b) + 1e-8)
+        return sim >= thresh
 
     def calc_mos(self, wave, sr):
         if sr != 16_000:
