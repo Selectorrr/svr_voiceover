@@ -1,16 +1,26 @@
+from multiprocessing import get_context
 from pathlib import Path
 
 import librosa
 import numpy
+import onnxruntime
 import soundfile
-from svr_tts import SVR_TTS
+from pqdm.processes import pqdm
 from svr_tts.core import SynthesisInput
-from tqdm import tqdm
 
 from modules.AudioProcessor import AudioProcessor
 from modules.CsvProcessor import CsvProcessor
+from modules.ModelFactory import ModelFactory
 from modules.SpeakerProcessor import SpeakerProcessor
 from modules.TextProcessor import TextProcessor
+
+onnxruntime.set_default_logger_severity(3)
+factory = None
+
+
+def _worker_init(config):
+    global factory
+    factory = ModelFactory(config)
 
 
 class PipelineModule:
@@ -18,12 +28,8 @@ class PipelineModule:
         self.text = TextProcessor()
         self.csv = CsvProcessor(config, self.text)
         self.audio = AudioProcessor(config)
-        self.speaker = SpeakerProcessor(config, self.audio)
-        self.ext = config['ext']
-        self.model = SVR_TTS(config['api_key'])
-        self.batch_size = config['batch_size']
-        self.is_strict_len = config['is_strict_len']
-        pass
+        self.speaker = SpeakerProcessor(self.audio)
+        self.config = config
 
     def _efficient_audio_generation(self, vo_items):
         inputs = []
@@ -33,7 +39,11 @@ class PipelineModule:
                                          timbre_wave_24k=vo_item['style_wave_24k'],
                                          prosody_wave_24k=vo_item['raw_wave_24k']))
         # отправляем в svr tts
-        waves = self.model.synthesize_batch(inputs)
+        job_n = ModelFactory.get_job_n()
+        # noinspection PyUnresolvedReferences
+        waves = factory.svr_tts.synthesize_batch(inputs, tqdm_kwargs={'leave': False, 'smoothing': 0,
+                                                                      'position': job_n + 1,
+                                                                      'postfix': f"job_n {job_n}"})
 
         results = []
         for idx, wave in enumerate(waves):
@@ -45,7 +55,7 @@ class PipelineModule:
             vo_item = vo_items[idx]
 
             # если длина аудио строго должна совпадать с оригиналом
-            if self.is_strict_len:
+            if self.config['is_strict_len']:
                 raw_len = len(vo_item['raw_wave_24k']) / 24_000
                 # уберем тишину тк это безболезненно
                 wave, _ = librosa.effects.trim(wave, top_db=40)
@@ -103,7 +113,7 @@ class PipelineModule:
             # Сохраняем итоговый файл
             dub_file = Path(f"workspace/dub/{i_path}")
             dub_file.parent.mkdir(parents=True, exist_ok=True)
-            dub_file = Path(str(dub_file)).with_suffix(f".{self.ext}")
+            dub_file = Path(str(dub_file)).with_suffix(f".{self.config['ext']}")
 
             soundfile.write(dub_file, dub, sr)
 
@@ -111,20 +121,29 @@ class PipelineModule:
         # Найдем все строки что нужно озвучить с учетом разных версий файлов
         todo_records, all_records = self.csv.find_changed_text_rows_csv()
 
-        while len(todo_records):
-            todo_records = [o for o in todo_records if len(self.text.get_text(o)[0]) <= 420]
-            todo_records = sorted(todo_records, key=lambda d: len(set(self.text.get_text(d)[0])), reverse=True)
-            # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
-            batches = [todo_records[i:i + self.batch_size] for i in range(0, len(todo_records), self.batch_size)]
-            for records in tqdm(batches, smoothing=0, desc="Общий прогресс"):
-                try:
-                    # Озвучиваем группу
-                    self._voice_over_record(records)
-                except AssertionError as e:
-                    # Неисправимая ошибка, может кончился баланс, завершаем работу
-                    print(e)
-                    return
-            # Найдем файлы которые не удалось озвучить что-б попробовать еще раз
-            todo_records, all_records = self.csv.find_changed_text_rows_csv()
+        todo_records = [o for o in todo_records if len(self.text.get_text(o)[0]) <= 420]
+        todo_records = sorted(todo_records, key=lambda d: len(set(self.text.get_text(d)[0])), reverse=True)
+        # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
+        batches = [todo_records[i:i + self.config['batch_size']] for i in
+                   range(0, len(todo_records), self.config['batch_size'])]
 
-        pass
+        mp_context = get_context('spawn')
+
+        # если однопроцессный режим то надо вручную инициализировать модельки
+        if self.config['n_jobs'] == 1:
+            _worker_init(self.config)
+
+        try:
+            pqdm(batches, self._voice_over_record,
+                 n_jobs=self.config['n_jobs'],
+                 mp_context=mp_context,
+                 smoothing=0,
+                 desc='Общий прогресс',
+                 initializer=_worker_init,
+                 initargs=(self.config,),
+                 position=0,
+                 exception_behaviour='immediate'
+                 )
+        except AssertionError as e:
+            # Неисправимая ошибка, может кончился баланс, завершаем работу
+            print(e)

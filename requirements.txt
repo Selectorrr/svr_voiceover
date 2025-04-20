@@ -1,4 +1,4 @@
-git+https://github.com/Selectorrr/svr_tts.git
+svr_tts
 numpy
 librosa
 pydub

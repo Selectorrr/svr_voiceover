@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 class SpeakerProcessor:
-    def __init__(self, config, audio_processor):
+    def __init__(self, audio_processor):
         self.audio = audio_processor
 
     def get_speaker_style(self, speaker, wave_24k):

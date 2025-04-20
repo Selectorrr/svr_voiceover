@@ -21,8 +21,8 @@ RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Устанавливаем зависимости и библиотеку (включая свою) через pip
-RUN pip install --no-cache-dir svr_tts==0.2 \
-    soundfile librosa pydub pyloudnorm
+RUN pip install --no-cache-dir svr_tts==0.4 \
+    soundfile librosa pydub pyloudnorm GPUtil pqdm
 
 # Скачиваем и устанавливаем vgmstream-cli
 RUN wget https://github.com/vgmstream/vgmstream-releases/releases/download/nightly/vgmstream-linux-cli.tar.gz \

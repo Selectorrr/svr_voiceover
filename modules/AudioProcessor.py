@@ -2,35 +2,23 @@ import io
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import librosa
 import numpy
-import onnxruntime
 import pyloudnorm
 import soundfile
-from appdirs import user_cache_dir
-from huggingface_hub import hf_hub_download
+from filelock import FileLock, Timeout
 from pydub import AudioSegment
 
 
 class AudioProcessor:
-    def __init__(self, config, providers=None):
+    def __init__(self, config):
         self.tone_sample_len = config['tone_sample_len']
         self.sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
-        if providers is None:
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        os.environ["TQDM_POSITION"] = "-1"
-        self.mos = onnxruntime.InferenceSession(
-            hf_hub_download(repo_id="selectorrrr/wav2vec2mos", filename="wav2vec2mos.onnx",
-                            cache_dir=self._get_cache_dir()), providers=providers)
 
         pass
-
-    def _get_cache_dir(self) -> str:
-        cache_dir = user_cache_dir("svr_voiceover", "SynthVoiceRu")
-        os.makedirs(cache_dir, exist_ok=True)
-        return cache_dir
 
     def _read_vg_in_memory(self, wem_file_path):
         # Создаем временный файл
@@ -115,24 +103,46 @@ class AudioProcessor:
         wave, sr = self._to_ndarray(segment)
         return wave, dBFS
 
-    def build_speaker_sample(self, voice_path, wave_24k):
-        new_seg = self._to_segment(wave_24k, 24_000)
-        if voice_path.exists():
-            segment = AudioSegment.from_wav(voice_path)
-            if len(segment) >= self.tone_sample_len:
-                return self._to_ndarray(segment)[0]
-            end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
-            if not self._is_similar(end_slice, new_seg):
-                segment += new_seg
-        else:
-            segment = new_seg
-        segment = segment[:self.tone_sample_len]
-        while len(segment) < 1000:
-            segment += segment
+    def build_speaker_sample(self, voice_path: Path, wave_24k):
 
-        voice_path.parent.mkdir(parents=True, exist_ok=True)
-        segment.export(voice_path, format="wav")
-        return self._to_ndarray(segment)[0]
+        lock_path = str(voice_path) + ".lock"
+
+        if os.path.exists(lock_path):
+            age = time.time() - os.path.getmtime(lock_path)
+            if age > 10:
+                try:
+                    os.remove(lock_path)
+                except OSError:
+                    pass
+
+        lock = FileLock(lock_path, timeout=10)
+        try:
+            with lock:
+                new_seg = self._to_segment(wave_24k, 24_000)
+                if voice_path.exists():
+                    segment = AudioSegment.from_wav(voice_path)
+                    if len(segment) >= self.tone_sample_len:
+                        return self._to_ndarray(segment)[0]
+                    end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
+                    if not self._is_similar(end_slice, new_seg):
+                        segment += new_seg
+                else:
+                    segment = new_seg
+
+                segment = segment[:self.tone_sample_len]
+                while len(segment) < 1000:
+                    segment += segment
+
+                voice_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp_path = voice_path.with_suffix(".wav.tmp")
+                segment.export(tmp_path, format="wav")
+                tmp_path.replace(voice_path)  # atomic rename
+                return self._to_ndarray(segment)[0]
+        except Timeout:
+            raise RuntimeError(f"Не удалось взять блокировку {lock_path} за 5 сек")
+        finally:
+            if os.path.exists(lock_path):
+                os.remove(lock_path)
 
     def _is_similar(self, seg1: AudioSegment, seg2: AudioSegment, thresh=0.9) -> bool:
         a = numpy.array(seg1.get_array_of_samples(), dtype=float)
@@ -148,7 +158,8 @@ class AudioProcessor:
             segment = segment.set_frame_rate(16_000)
             wave, sr = self._to_ndarray(segment)
         x = wave[numpy.newaxis, :].astype(numpy.float32)
-        outs = self.mos.run(None, {"input_values": x})
+        from modules.PipelineModule import factory
+        outs = factory.mos.run(None, {"input_values": x})
         mos = float(outs[0].reshape(-1).mean())
         return mos
 
