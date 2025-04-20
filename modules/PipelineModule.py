@@ -43,7 +43,8 @@ class PipelineModule:
         # noinspection PyUnresolvedReferences
         waves = factory.svr_tts.synthesize_batch(inputs, tqdm_kwargs={'leave': False, 'smoothing': 0,
                                                                       'position': job_n + 1,
-                                                                      'postfix': f"job_n {job_n}"})
+                                                                      'postfix': f"job_n {job_n}",
+                                                                      'dynamic_ncols': True})
 
         results = []
         for idx, wave in enumerate(waves):
@@ -63,7 +64,7 @@ class PipelineModule:
                 rate = wave_len / raw_len
                 if rate > 1:
                     # ускорим, но не сильнее чем на 50 процентов
-                    wave = self.audio.speedup(wave, 22050, min(1.5, rate), raw_len)
+                    wave = self.audio.speedup(wave, 22050, rate, raw_len)
             results.append((wave, 22050, vo_item['path'], vo_item['dBFS']))
         return results
 
@@ -142,7 +143,8 @@ class PipelineModule:
                  initializer=_worker_init,
                  initargs=(self.config,),
                  position=0,
-                 exception_behaviour='immediate'
+                 exception_behaviour='immediate',
+                 dynamic_ncols=True
                  )
         except AssertionError as e:
             # Неисправимая ошибка, может кончился баланс, завершаем работу

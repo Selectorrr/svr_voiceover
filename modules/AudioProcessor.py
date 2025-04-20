@@ -16,6 +16,7 @@ from pydub import AudioSegment
 class AudioProcessor:
     def __init__(self, config):
         self.tone_sample_len = config['tone_sample_len']
+        self.max_speed_ratio = config['max_speed_ratio']
         self.sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
 
         pass
@@ -216,10 +217,14 @@ class AudioProcessor:
 
         memory_buffer = io.BytesIO()
         # эксперементы показали что atempo дает наименьшие артефакты при ускорении
+        ratio = min(self.max_speed_ratio, ratio)
         segment.export(memory_buffer, format='wav', parameters=["-af", f"atempo={ratio}"])
         memory_buffer.seek(0)
         wave, sr = soundfile.read(memory_buffer)
         # обрезаем к оригиналу то что смогли ускорить
-        segment = self._to_segment(wave, sr)[:max_len * 1000]
+        segment = self._to_segment(wave, sr)
+        max_len = max_len * 1000
+        if len(segment) > max_len:
+            segment = segment[:max_len].fade_out(500)
         wave, sr = self._to_ndarray(segment)
         return wave
