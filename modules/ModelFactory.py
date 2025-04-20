@@ -34,7 +34,7 @@ class ModelFactory:
     def _get_provider_opts(self):
         provider_options = []
         for provider in self.config["providers"]:
-            if provider is "CUDAExecutionProvider":
+            if provider == "CUDAExecutionProvider":
                 provider_options += [{"device_id": self._get_device_id()}]
             else:
                 provider_options += [{}]
