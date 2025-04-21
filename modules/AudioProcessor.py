@@ -217,7 +217,7 @@ class AudioProcessor:
 
         memory_buffer = io.BytesIO()
         # эксперементы показали что atempo дает наименьшие артефакты при ускорении
-        ratio = min(self.max_speed_ratio, ratio)
+        ratio = min(self.max_speed_ratio, ratio) + 0.025
         segment.export(memory_buffer, format='wav', parameters=["-af", f"atempo={ratio}"])
         memory_buffer.seek(0)
         wave, sr = soundfile.read(memory_buffer)
@@ -225,6 +225,6 @@ class AudioProcessor:
         segment = self._to_segment(wave, sr)
         max_len = max_len * 1000
         if len(segment) > max_len:
-            segment = segment[:max_len].fade_out(500)
+            segment = segment[:max_len].fade_out(300)
         wave, sr = self._to_ndarray(segment)
         return wave
