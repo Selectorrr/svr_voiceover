@@ -10,12 +10,10 @@ class SpeakerProcessor:
             Составляет сэмпл для опеределния тембра голоса и сохраняет его на диск
         """
 
-        postfix = round(self.audio.calc_mos(wave_24k, 24_000))
+        mos = self.audio.calc_mos(wave_24k, 24_000)
 
-        speaker_style_cache_key = f"{speaker}_{postfix}"
+        voice = Path(f"workspace/voices/{speaker}.wav")
 
-        voice = Path(f"workspace/voices/{speaker_style_cache_key}.wav")
-
-        style_wave_24k = self.audio.build_speaker_sample(voice, wave_24k)
+        style_wave_24k = self.audio.build_speaker_sample(voice, wave_24k, mos)
 
         return style_wave_24k
