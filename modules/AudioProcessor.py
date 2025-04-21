@@ -104,7 +104,7 @@ class AudioProcessor:
         wave, sr = self._to_ndarray(segment)
         return wave, dBFS
 
-    def build_speaker_sample(self, voice_path: Path, wave_24k, mos, mos_trash_hold=3.5):
+    def build_speaker_sample(self, voice_path: Path, wave_24k, mos_trash_hold=3.5):
 
         lock_path = str(voice_path) + ".lock"
 
@@ -117,6 +117,7 @@ class AudioProcessor:
                     pass
 
         lock = FileLock(lock_path, timeout=10)
+        mos = None
         try:
             with lock:
                 new_seg = self._to_segment(wave_24k, 24_000)
@@ -124,6 +125,7 @@ class AudioProcessor:
                     segment = AudioSegment.from_wav(voice_path)
                     if len(segment) >= self.tone_sample_len:
                         return self._to_ndarray(segment)[0]
+                    mos = self.calc_mos(wave_24k, 24_000)
                     if mos >= mos_trash_hold:
                         end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
                         if not self._is_similar(end_slice, new_seg):
@@ -135,6 +137,8 @@ class AudioProcessor:
                 while len(segment) < 1000:
                     segment += segment
 
+                if not mos:
+                    mos = self.calc_mos(wave_24k, 24_000)
                 if mos >= mos_trash_hold:
                     voice_path.parent.mkdir(parents=True, exist_ok=True)
                     tmp_path = voice_path.with_suffix(".wav.tmp")
