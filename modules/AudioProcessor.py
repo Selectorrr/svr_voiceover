@@ -16,7 +16,6 @@ from pydub import AudioSegment
 class AudioProcessor:
     def __init__(self, config):
         self.tone_sample_len = config['tone_sample_len']
-        self.max_speed_ratio = config['max_speed_ratio']
         self.sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
 
         pass
