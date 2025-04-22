@@ -104,7 +104,15 @@ class AudioProcessor:
         wave, sr = self._to_ndarray(segment)
         return wave, dBFS
 
-    def build_speaker_sample(self, voice_path: Path, wave_24k, mos_trash_hold=3.5):
+    def build_speaker_sample(self, voice_path: Path, wave_24k, mos_good=3.5, mos_bad=2):
+        mos = self.calc_mos(wave_24k, 24_000)
+
+        # если аудио с эффектами или сильно эмоциональное
+        if mos < mos_bad:
+            segment = self._to_segment(wave_24k, 24_000)
+            segment = self._fix_len(segment)
+            # вернем как есть без подмены на качественный
+            return self._to_ndarray(segment)[0]
 
         lock_path = str(voice_path) + ".lock"
 
@@ -117,7 +125,6 @@ class AudioProcessor:
                     pass
 
         lock = FileLock(lock_path, timeout=10)
-        mos = None
         try:
             with lock:
                 new_seg = self._to_segment(wave_24k, 24_000)
@@ -125,21 +132,16 @@ class AudioProcessor:
                     segment = AudioSegment.from_wav(voice_path)
                     if len(segment) >= self.tone_sample_len:
                         return self._to_ndarray(segment)[0]
-                    mos = self.calc_mos(wave_24k, 24_000)
-                    if mos >= mos_trash_hold:
+                    if mos >= mos_good:
                         end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
                         if not self._is_similar(end_slice, new_seg):
                             segment += new_seg
                 else:
                     segment = new_seg
 
-                segment = segment[:self.tone_sample_len]
-                while len(segment) < 1000:
-                    segment += segment
+                segment = self._fix_len(segment)
 
-                if not mos:
-                    mos = self.calc_mos(wave_24k, 24_000)
-                if mos >= mos_trash_hold:
+                if mos >= mos_good:
                     voice_path.parent.mkdir(parents=True, exist_ok=True)
                     tmp_path = voice_path.with_suffix(".wav.tmp")
                     segment.export(tmp_path, format="wav")
@@ -150,6 +152,12 @@ class AudioProcessor:
         finally:
             if os.path.exists(lock_path):
                 os.remove(lock_path)
+
+    def _fix_len(self, segment):
+        while len(segment) < 1000:
+            segment += segment
+        segment = segment[:self.tone_sample_len]
+        return segment
 
     def _is_similar(self, seg1: AudioSegment, seg2: AudioSegment, thresh=0.9) -> bool:
         a = numpy.array(seg1.get_array_of_samples(), dtype=float)
@@ -218,19 +226,18 @@ class AudioProcessor:
         wave, sr = self._to_ndarray(segment)
         return wave
 
-    def speedup(self, wave, sr, ratio, max_len):
+    def speedup(self, wave, sr, ratio, max_len, increment=0.05):
         segment = self._to_segment(wave, sr)
+        ratio = min(2 - increment, ratio)
+        ratio += increment
+        while len(segment) > max_len * 1000:
+            memory_buffer = io.BytesIO()
+            # эксперементы показали что atempo дает наименьшие артефакты при ускорении
+            segment.export(memory_buffer, format='wav', parameters=["-af", f"atempo={ratio}"])
+            memory_buffer.seek(0)
+            wave, sr = soundfile.read(memory_buffer)
+            segment = self._to_segment(wave, sr)
+            ratio = 1 + increment
 
-        memory_buffer = io.BytesIO()
-        # эксперементы показали что atempo дает наименьшие артефакты при ускорении
-        ratio = min(self.max_speed_ratio, ratio) + 0.025
-        segment.export(memory_buffer, format='wav', parameters=["-af", f"atempo={ratio}"])
-        memory_buffer.seek(0)
-        wave, sr = soundfile.read(memory_buffer)
-        # обрезаем к оригиналу то что смогли ускорить
-        segment = self._to_segment(wave, sr)
-        max_len = max_len * 1000
-        if len(segment) > max_len:
-            segment = segment[:max_len].fade_out(300)
         wave, sr = self._to_ndarray(segment)
         return wave
