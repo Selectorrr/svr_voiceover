@@ -53,6 +53,8 @@ RUN if [ ! -f /usr/local/cuda/lib64/libcudnn.so.9 ]; then \
 
 # Копируем виртуальное окружение из этапа сборки
 COPY --from=builder /opt/venv /opt/venv
+# Копируем vgmstream-cli
+COPY --from=builder /usr/local/bin/vgmstream-cli /usr/local/bin/vgmstream-cli
 ENV PATH="/opt/venv/bin:$PATH"
 
 COPY utils/init_models.py /workspace/SynthVoiceRu/utils/init_models.py

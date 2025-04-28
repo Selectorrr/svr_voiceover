@@ -65,7 +65,7 @@ class PipelineModule:
                 if rate > 1:
                     # ускорим, но не сильнее чем на 50 процентов
                     wave = self.audio.speedup(wave, 22050, rate, raw_len)
-            results.append((wave, 22050, vo_item['path'], vo_item['dBFS']))
+            results.append((wave, 22050, vo_item['path'], vo_item['meta']))
         return results
 
     def _voice_over_items(self, vo_items):
@@ -87,7 +87,7 @@ class PipelineModule:
         for record in records:
             path = Path(f"workspace/resources/{record['audio']}")
             # Прочитаем оригинальный аудио файл и его громкость для определения просодии
-            raw_wave_24k, dBFS = self.audio.load_audio(str(path))
+            raw_wave_24k, meta = self.audio.load_audio(str(path))
             # Определяем текст для озвучки
             text, is_accented = self.text.get_text(record)
 
@@ -99,7 +99,7 @@ class PipelineModule:
                 'text': text,
                 'is_accented': is_accented,
                 'raw_wave_24k': raw_wave_24k,
-                'dBFS': dBFS,
+                'meta': meta,
                 'style_wave_24k': style_wave_24k,
                 'path': record['audio']
             }
@@ -108,9 +108,9 @@ class PipelineModule:
         # Озвучиваем батч
         results = self._voice_over_items(vo_items)
 
-        for dub, sr, i_path, i_dBFS in results:
-            # Восстановим громкость оригинального аудио
-            dub = self.audio.restore_loudness(dub, sr, i_dBFS)
+        for dub, sr, i_path, i_meta in results:
+            # Восстановим характеристики оригинального аудио
+            dub, sr = self.audio.restore_meta(dub, sr, i_meta)
             # Сохраняем итоговый файл
             dub_file = Path(f"workspace/dub/{i_path}")
             dub_file.parent.mkdir(parents=True, exist_ok=True)

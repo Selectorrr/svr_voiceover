@@ -94,14 +94,18 @@ class AudioProcessor:
         if channels > 1:
             # делаем моно потому что нейросеть работает с моно
             segment = segment.set_channels(1)
-        # запомним оригинальную громкость
-        dBFS = segment.dBFS
+        # запомним оригинальные характеристики звука
+        meta = {
+            'frame_rate': segment.frame_rate,
+            'sample_width': segment.sample_width,
+            'dBFS': segment.dBFS
+        }
         # и приведем к нормальной потому что нейросеть обучалась на нормализованной громкости
         segment = self._normalize_audio_lufs(segment)
         if segment.frame_rate != 24_000:
             segment = segment.set_frame_rate(24_000)
         wave, sr = self._to_ndarray(segment)
-        return wave, dBFS
+        return wave, meta
 
     def build_speaker_sample(self, voice_path: Path, wave_24k, mos_good=3.5, mos_bad=2):
         mos = self.calc_mos(wave_24k, 24_000)
@@ -219,11 +223,13 @@ class AudioProcessor:
         raw_wave = numpy.pad(raw_wave, (0, int(0.1 * raw_sr)), 'constant')
         return raw_wave.astype(numpy.float32)
 
-    def restore_loudness(self, wave, sr, dBFS):
+    def restore_meta(self, wave, sr, meta):
         segment = self._to_segment(wave, sr)
-        segment = segment.apply_gain(dBFS - segment.dBFS)
+        segment = segment.set_frame_rate(meta['frame_rate'])
+        segment = segment.set_sample_width(meta['sample_width'])
+        segment = segment.apply_gain(meta['dBFS'] - segment.dBFS)
         wave, sr = self._to_ndarray(segment)
-        return wave
+        return wave, sr
 
     def speedup(self, wave, sr, ratio, max_len, increment=0.05):
         segment = self._to_segment(wave, sr)
