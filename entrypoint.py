@@ -10,6 +10,13 @@ def detect_gpu_count():
     return len(gpus) if gpus else 1
 
 
+def get_def_providers():
+    if len(GPUtil.getGPUs()):
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    else:
+        return ["CPUExecutionProvider"]
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='')
 
@@ -20,8 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_jobs', type=int, default=None, help='Количество воркеров')
     parser.add_argument('--is_strict_len', type=bool, default=False,
                         help='Должна ли длина аудио строго совпадать с оригиналом')
-    parser.add_argument('--providers', nargs='+',
-                        default=["CUDAExecutionProvider", "CPUExecutionProvider"],
+    parser.add_argument('--providers', nargs='+', default=get_def_providers(),
                         help='Список провайдеров для выполнения (ONNX runtime)')
     args = parser.parse_args()
 
