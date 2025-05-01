@@ -65,7 +65,7 @@ class PipelineModule:
                 if rate > 1:
                     # ускорим, но не сильнее чем на 50 процентов
                     wave = self.audio.speedup(wave, 22050, rate, raw_len)
-            results.append((wave, 22050, vo_item['path'], vo_item['meta']))
+            results.append((wave, 22050, vo_item['path'], vo_item['meta'], vo_item['raw_wave'], vo_item['raw_sr']))
         return results
 
     def _voice_over_items(self, vo_items):
@@ -87,7 +87,7 @@ class PipelineModule:
         for record in records:
             path = Path(f"workspace/resources/{record['audio']}")
             # Прочитаем оригинальный аудио файл и его громкость для определения просодии
-            raw_wave_24k, meta = self.audio.load_audio(str(path))
+            raw_wave_24k, meta, raw_wave, raw_sr = self.audio.load_audio(str(path))
             # Определяем текст для озвучки
             text, is_accented = self.text.get_text(record)
 
@@ -101,22 +101,31 @@ class PipelineModule:
                 'raw_wave_24k': raw_wave_24k,
                 'meta': meta,
                 'style_wave_24k': style_wave_24k,
-                'path': record['audio']
+                'path': record['audio'],
+                'raw_wave': raw_wave,
+                'raw_sr': raw_sr
             }
             vo_items.append(vo_item)
 
         # Озвучиваем батч
         results = self._voice_over_items(vo_items)
 
-        for dub, sr, i_path, i_meta in results:
+        for dub, sr, i_path, i_meta, i_raw_wave, i_raw_sr in results:
             # Восстановим характеристики оригинального аудио
             dub, sr = self.audio.restore_meta(dub, sr, i_meta)
-            # Сохраняем итоговый файл
+            # Сохраняем дубляж
             dub_file = Path(f"workspace/dub/{i_path}")
             dub_file.parent.mkdir(parents=True, exist_ok=True)
             dub_file = Path(str(dub_file)).with_suffix(f".{self.config['ext']}")
-
             soundfile.write(dub_file, dub, sr)
+
+            # Сведем закадр
+            vo, vo_sr = self.audio.mixing(dub, sr, i_raw_wave, i_raw_sr)
+            # Сохраняем закадр
+            vo_file = Path(f"workspace/vo/{i_path}")
+            vo_file.parent.mkdir(parents=True, exist_ok=True)
+            vo_file = Path(str(vo_file)).with_suffix(f".{self.config['ext']}")
+            soundfile.write(vo_file, vo, vo_sr)
 
     def run(self):
         # Найдем все строки что нужно озвучить с учетом разных версий файлов

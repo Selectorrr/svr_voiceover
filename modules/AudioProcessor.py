@@ -87,7 +87,7 @@ class AudioProcessor:
                 wave, sr = self._read_vg_in_memory(path)
             except Exception as e:
                 raise ValueError(f"Unsupported file: {e}")
-
+        raw_wave, raw_sr = wave, sr
         segment = self._to_segment(wave, sr)
 
         channels = segment.channels
@@ -105,7 +105,7 @@ class AudioProcessor:
         if segment.frame_rate != 24_000:
             segment = segment.set_frame_rate(24_000)
         wave, sr = self._to_ndarray(segment)
-        return wave, meta
+        return wave, meta, raw_wave, raw_sr
 
     def build_speaker_sample(self, voice_path: Path, wave_24k, mos_good=3.5, mos_bad=2):
         mos = self.calc_mos(wave_24k, 24_000)
@@ -246,3 +246,21 @@ class AudioProcessor:
 
         wave, sr = self._to_ndarray(segment)
         return wave
+
+    def mixing(self, dub_wave, dub_sr, raw_wave, raw_sr):
+        dub_segment = self._to_segment(dub_wave, dub_sr)
+        resource_segment = self._to_segment(raw_wave, raw_sr)
+        raw_audio = resource_segment - 7
+        if raw_audio.frame_rate != dub_segment.frame_rate:
+            raw_audio = raw_audio.set_frame_rate(dub_segment.frame_rate)
+        if raw_audio.channels > 1:
+            raw_audio = dub_segment.set_channels(1)
+
+        # Выравнивание длительности аудио
+        max_duration = max(len(raw_audio), len(dub_segment))
+        raw_audio = raw_audio + AudioSegment.silent(duration=max_duration - len(raw_audio))
+        dub_segment = dub_segment + AudioSegment.silent(duration=max_duration - len(dub_segment))
+
+        # Смешивание
+        mixed_audio = raw_audio.overlay(dub_segment)
+        return self._to_ndarray(mixed_audio)
