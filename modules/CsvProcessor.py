@@ -8,6 +8,7 @@ class CsvProcessor:
     def __init__(self, config, text_processor):
         self.ext = config['ext']
         self.text = text_processor
+        self.csv_delimiter = config['csv_delimiter']
         pass
 
     def _extract_version_number(self, filename):
@@ -86,7 +87,7 @@ class CsvProcessor:
 
         # Читаем и обрабатываем последнюю версию
         with open(latest_version, mode='r', encoding='utf-8-sig', newline='') as csvfile:
-            reader = csv.DictReader(csvfile)
+            reader = csv.DictReader(csvfile, delimiter=self.csv_delimiter)
             fieldnames = reader.fieldnames
 
             # Проверяем наличие столбца 'audio'
