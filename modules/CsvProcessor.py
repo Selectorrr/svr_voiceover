@@ -9,6 +9,9 @@ class CsvProcessor:
         self.ext = config['ext']
         self.text = text_processor
         self.csv_delimiter = config['csv_delimiter']
+        self.path_filter = None
+        if config['path_filter']:
+            self.path_filter = config['path_filter'].replace('\\', '/').removeprefix('./').removeprefix('/')
         pass
 
     def _extract_version_number(self, filename):
@@ -79,6 +82,8 @@ class CsvProcessor:
 
                 for row in reader:
                     row['audio'] = str(Path(row['audio'])).replace('\\', '/').removeprefix('./')
+                    if self.path_filter and not row['audio'].startswith(self.path_filter):
+                        continue
                     key = row['audio']
                     previous_data[key] = row
 
@@ -97,6 +102,8 @@ class CsvProcessor:
 
             for row in reader:
                 row['audio'] = str(Path(row['audio'])).replace('\\', '/').removeprefix('./')
+                if self.path_filter and not row['audio'].startswith(self.path_filter):
+                    continue
                 key = row['audio']
                 text = self.text.get_text(row)[0]
 

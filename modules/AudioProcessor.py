@@ -17,6 +17,7 @@ class AudioProcessor:
     def __init__(self, config):
         self.tone_sample_len = config['tone_sample_len']
         self.sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
+        self.is_respect_mos = config['is_respect_mos']
 
         pass
 
@@ -109,7 +110,10 @@ class AudioProcessor:
         return wave, meta, raw_wave, raw_sr
 
     def build_speaker_sample(self, voice_path: Path, wave_24k, mos_good=3.5, mos_bad=2):
-        mos = self.calc_mos(wave_24k, 24_000)
+        if self.is_respect_mos:
+            mos = self.calc_mos(wave_24k, 24_000)
+        else:
+            mos = mos_good
 
         # если аудио с эффектами или сильно эмоциональное
         if mos < mos_bad:
@@ -210,13 +214,46 @@ class AudioProcessor:
         raw_wave, raw_sr = self._to_ndarray(raw_segment)
         return raw_wave
 
-    def align_by_samples(self, wave, raw_wave):
+    def get_sound_center(self, signal, top_db=40):
+        if signal.ndim > 1:
+            mono = numpy.mean(signal, axis=tuple(range(1, signal.ndim)))
+        else:
+            mono = signal
+        _, idx = librosa.effects.trim(mono, top_db=top_db)
+        start, end = idx
+        center = (start + end) // 2
+        return center, start, end
+
+    def align_by_samples(self, wave, raw_wave, top_db=40):
         target_len = raw_wave.shape[0]
+        wave_len = wave.shape[0]
+
+        center_wave, start_wave, end_wave = self.get_sound_center(wave, top_db)
+        center_raw, _, _ = self.get_sound_center(raw_wave, top_db)
+
+        desired_shift = center_raw - center_wave
+
+        # Вычисляем допустимые границы сдвига (чтобы не потерять ни один сэмпл)
+        max_left_shift = center_wave  # не можем обрезать начало звучания
+        max_right_shift = target_len - (wave_len - center_wave)  # не можем обрезать конец звучания
+
+        # Ограничиваем shift, чтобы полезный сигнал полностью влез
+        safe_shift = int(numpy.clip(desired_shift, -max_left_shift, max_right_shift))
+
+        # Применяем сдвиг
+        if safe_shift > 0:
+            pad = numpy.zeros((safe_shift,) + wave.shape[1:], dtype=wave.dtype)
+            wave = numpy.concatenate([pad, wave], axis=0)
+        elif safe_shift < 0:
+            wave = wave[-safe_shift:]
+
+        # Дополняем справа до нужной длины
         if wave.shape[0] < target_len:
-            pad_shape = (target_len - wave.shape[0],) + wave.shape[1:]
-            padding = numpy.zeros(pad_shape, dtype=wave.dtype)
-            wave = numpy.concatenate([wave, padding], axis=0)
-        return wave[:target_len]
+            pad = numpy.zeros((target_len - wave.shape[0],) + wave.shape[1:], dtype=wave.dtype)
+            wave = numpy.concatenate([wave, pad], axis=0)
+        else:
+            wave = wave[:target_len]  # подстраховка, не должно сработать при <=
+        return wave
 
     def prepare_prosody_wave(self, raw_wave, raw_sr):
         segment_orig = self._to_segment(raw_wave, raw_sr)
