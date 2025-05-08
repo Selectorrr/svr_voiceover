@@ -57,7 +57,7 @@ class PipelineModule:
 
             # если длина аудио строго должна совпадать с оригиналом
             if self.config['is_strict_len']:
-                raw_len = len(vo_item['raw_wave_24k']) / 24_000
+                raw_len = len(vo_item['raw_wave']) / vo_item['raw_sr']
                 # уберем тишину тк это безболезненно
                 wave, _ = librosa.effects.trim(wave, top_db=40)
                 wave_len = len(wave) / 22050
@@ -113,6 +113,8 @@ class PipelineModule:
         for dub, sr, i_path, i_meta, i_raw_wave, i_raw_sr in results:
             # Восстановим характеристики оригинального аудио
             dub, sr = self.audio.restore_meta(dub, sr, i_meta)
+            if self.config['is_strict_len']:
+                dub = self.audio.align_by_samples(dub, i_raw_wave)
             # Сохраняем дубляж
             dub_file = Path(f"workspace/dub/{i_path}")
             dub_file.parent.mkdir(parents=True, exist_ok=True)
@@ -121,6 +123,8 @@ class PipelineModule:
 
             # Сведем закадр
             vo, vo_sr = self.audio.mixing(dub, sr, i_raw_wave, i_raw_sr)
+            if self.config['is_strict_len']:
+                vo = self.audio.align_by_samples(vo, i_raw_wave)
             # Сохраняем закадр
             vo_file = Path(f"workspace/vo/{i_path}")
             vo_file.parent.mkdir(parents=True, exist_ok=True)

@@ -98,7 +98,8 @@ class AudioProcessor:
         meta = {
             'frame_rate': segment.frame_rate,
             'sample_width': segment.sample_width,
-            'dBFS': segment.dBFS
+            'dBFS': segment.dBFS,
+            'channels': channels
         }
         # и приведем к нормальной потому что нейросеть обучалась на нормализованной громкости
         segment = self._normalize_audio_lufs(segment)
@@ -209,6 +210,14 @@ class AudioProcessor:
         raw_wave, raw_sr = self._to_ndarray(raw_segment)
         return raw_wave
 
+    def align_by_samples(self, wave, raw_wave):
+        target_len = raw_wave.shape[0]
+        if wave.shape[0] < target_len:
+            pad_shape = (target_len - wave.shape[0],) + wave.shape[1:]
+            padding = numpy.zeros(pad_shape, dtype=wave.dtype)
+            wave = numpy.concatenate([wave, padding], axis=0)
+        return wave[:target_len]
+
     def prepare_prosody_wave(self, raw_wave, raw_sr):
         segment_orig = self._to_segment(raw_wave, raw_sr)
         segment = segment_orig
@@ -228,6 +237,7 @@ class AudioProcessor:
         segment = segment.set_frame_rate(meta['frame_rate'])
         segment = segment.set_sample_width(meta['sample_width'])
         segment = segment.apply_gain(meta['dBFS'] - segment.dBFS)
+        segment = segment.set_channels(meta['channels'])
         wave, sr = self._to_ndarray(segment)
         return wave, sr
 
