@@ -263,8 +263,6 @@ class AudioProcessor:
         raw_audio = resource_segment - 7
         if raw_audio.frame_rate != dub_segment.frame_rate:
             raw_audio = raw_audio.set_frame_rate(dub_segment.frame_rate)
-        if raw_audio.channels > 1:
-            raw_audio = dub_segment.set_channels(1)
 
         # Выравнивание длительности аудио
         max_duration = max(len(raw_audio), len(dub_segment))
