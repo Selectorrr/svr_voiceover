@@ -14,6 +14,9 @@ from modules.ModelFactory import ModelFactory
 from modules.SpeakerProcessor import SpeakerProcessor
 from modules.TextProcessor import TextProcessor
 
+MAX_PROSODY_LEN = 24_000 * 20
+FADE_LEN = int(0.1 * 22050)
+
 onnxruntime.set_default_logger_severity(3)
 factory = None
 
@@ -31,6 +34,68 @@ class PipelineModule:
         self.speaker = SpeakerProcessor(self.audio)
         self.config = config
 
+    def synthesize_batch_with_split(self, inputs, max_text_len=200):
+        split_inputs = []
+        mapping = []
+
+        for idx, inp in enumerate(inputs):
+            if len(inp.text) <= max_text_len:
+                split_inputs.append(SynthesisInput(
+                    text=inp.text,
+                    stress=inp.stress,
+                    timbre_wave_24k=inp.timbre_wave_24k,
+                    prosody_wave_24k=inp.prosody_wave_24k[:MAX_PROSODY_LEN]
+                ))
+                mapping.append((idx, 1))
+                continue
+
+            chunks = self.text.split_text(inp.text, max_text_len)
+
+            for chunk in chunks:
+                split_inputs.append(SynthesisInput(
+                    text=chunk,
+                    stress=inp.stress,
+                    timbre_wave_24k=inp.timbre_wave_24k,
+                    prosody_wave_24k=inp.prosody_wave_24k[:MAX_PROSODY_LEN]
+                ))
+            mapping.append((idx, len(chunks)))
+
+        job_n = ModelFactory.get_job_n()
+
+        # noinspection PyUnresolvedReferences
+        all_waves = factory.svr_tts.synthesize_batch(
+            split_inputs,
+            tqdm_kwargs={
+                'leave': False,
+                'smoothing': 0,
+                'position': job_n + 1,
+                'postfix': f"job_n {job_n}",
+                'dynamic_ncols': True
+            }
+        )
+
+        merged = []
+        wave_idx = 0
+        for _, count in mapping:
+            parts = []
+            for i in range(count):
+                wave = all_waves[wave_idx]
+                wave_idx += 1
+                if wave is None:
+                    continue
+
+                if len(wave) >= 2 * FADE_LEN:
+                    if i > 0:
+                        wave[:FADE_LEN] *= numpy.linspace(0, 1, FADE_LEN)
+                    if i < count - 1:
+                        wave[-FADE_LEN:] *= numpy.linspace(1, 0, FADE_LEN)
+
+                parts.append(wave)
+
+            merged.append(numpy.concatenate(parts) if parts else None)
+
+        return merged
+
     def _efficient_audio_generation(self, vo_items):
         inputs = []
         for vo_item in vo_items:
@@ -39,12 +104,8 @@ class PipelineModule:
                                          timbre_wave_24k=vo_item['style_wave_24k'],
                                          prosody_wave_24k=vo_item['raw_wave_24k']))
         # отправляем в svr tts
-        job_n = ModelFactory.get_job_n()
         # noinspection PyUnresolvedReferences
-        waves = factory.svr_tts.synthesize_batch(inputs, tqdm_kwargs={'leave': False, 'smoothing': 0,
-                                                                      'position': job_n + 1,
-                                                                      'postfix': f"job_n {job_n}",
-                                                                      'dynamic_ncols': True})
+        waves = self.synthesize_batch_with_split(inputs)
 
         results = []
         for idx, wave in enumerate(waves):
@@ -135,7 +196,7 @@ class PipelineModule:
         # Найдем все строки что нужно озвучить с учетом разных версий файлов
         todo_records, all_records = self.csv.find_changed_text_rows_csv()
 
-        todo_records = [o for o in todo_records if len(self.text.get_text(o)[0]) <= 420]
+        # todo_records = [o for o in todo_records if len(self.text.get_text(o)[0]) <= 420]
         todo_records = sorted(todo_records, key=lambda d: len(set(self.text.get_text(d)[0])), reverse=True)
         # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
         batches = [todo_records[i:i + self.config['batch_size']] for i in

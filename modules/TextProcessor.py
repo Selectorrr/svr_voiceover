@@ -30,3 +30,17 @@ class TextProcessor:
             print('sound word ' + sentence)
         return result
 
+    def split_text(self, text, max_text_len):
+        phrases = re.split(r'(?<=[.!?…])\s+', text)
+        chunks, current = [], ""
+        for phrase in phrases:
+            if len(current) + len(phrase) + 1 <= max_text_len:
+                current += (" " if current else "") + phrase
+            else:
+                if current:
+                    chunks.append(current)
+                current = phrase
+        if current:
+            chunks.append(current)
+        return chunks
+
