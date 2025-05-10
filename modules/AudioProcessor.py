@@ -317,17 +317,4 @@ class AudioProcessor:
         mixed_audio = raw_audio.overlay(dub_segment)
         return self._to_ndarray(mixed_audio)
 
-    def crossfade(self, prev_chunk: numpy.ndarray, next_chunk: numpy.ndarray, overlap: int = 100) -> numpy.ndarray:
-        fade_out = numpy.cos(numpy.linspace(0, numpy.pi / 2, overlap)) ** 2
-        fade_in = numpy.cos(numpy.linspace(numpy.pi / 2, 0, overlap)) ** 2
-        next_chunk[:overlap] = next_chunk[:overlap] * fade_in + prev_chunk[-overlap:] * fade_out
-        return next_chunk
-
-    def fade_edges(self, wave: numpy.ndarray, fade_len: int = 20) -> numpy.ndarray:
-        """Добавляет fade-in и fade-out по краям"""
-        fade = numpy.linspace(0, 1, fade_len)
-        wave[:fade_len] *= fade  # плавный вход
-        wave[-fade_len:] *= fade[::-1]  # плавный выход
-        return wave
-
 
