@@ -82,6 +82,7 @@ class PipelineModule:
                 wave = all_waves[wave_idx]
                 wave_idx += 1
                 if wave is None or not len(self.audio.get_voice_timestamps(wave, 22050)):
+                    parts = []
                     break
                 if len(wave) >= 2 * FADE_LEN:
                     if i > 0:
