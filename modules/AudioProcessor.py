@@ -221,21 +221,19 @@ class AudioProcessor:
             mono = signal
         _, idx = librosa.effects.trim(mono, top_db=top_db)
         start, end = idx
-        center = (start + end) // 2
-        return center, start, end
+        return start
 
     def align_by_samples(self, wave, raw_wave, top_db=40):
         target_len = raw_wave.shape[0]
         wave_len = wave.shape[0]
 
-        center_wave, start_wave, end_wave = self.get_sound_center(wave, top_db)
-        center_raw, _, _ = self.get_sound_center(raw_wave, top_db)
+        start_wave = self.get_sound_center(wave, top_db)
+        start_raw = self.get_sound_center(raw_wave, top_db)
 
-        desired_shift = center_raw - center_wave
+        desired_shift = start_raw - start_wave
 
-        # Вычисляем допустимые границы сдвига (чтобы не потерять ни один сэмпл)
-        max_left_shift = center_wave  # не можем обрезать начало звучания
-        max_right_shift = target_len - (wave_len - center_wave)  # не можем обрезать конец звучания
+        max_left_shift = start_wave
+        max_right_shift = target_len - (wave_len - start_wave)
 
         # Ограничиваем shift, чтобы полезный сигнал полностью влез
         safe_shift = int(numpy.clip(desired_shift, -max_left_shift, max_right_shift))
