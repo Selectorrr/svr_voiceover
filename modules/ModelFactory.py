@@ -8,6 +8,8 @@ from appdirs import user_cache_dir
 from huggingface_hub import hf_hub_download
 from svr_tts import SVR_TTS
 
+from modules.VadModel import VadModel
+
 
 class ModelFactory:
     """
@@ -30,6 +32,12 @@ class ModelFactory:
                             cache_dir=self._get_cache_dir()), providers=self.config["providers"],
             provider_options=self._get_provider_opts())
         return session
+
+    @cached_property
+    def vad(self):
+        vad = VadModel(providers=self.config["providers"], provider_options=self._get_provider_opts())
+        return vad
+
 
     def _get_provider_opts(self):
         provider_options = []

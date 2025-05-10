@@ -186,6 +186,15 @@ class AudioProcessor:
         mos = float(outs[0].reshape(-1).mean())
         return mos
 
+    def get_voice_timestamps(self, wave, sr):
+        from modules.PipelineModule import factory
+        if sr != 16_000:
+            segment = self._to_segment(wave, sr)
+            segment = segment.set_frame_rate(16_000)
+            wave, sr = self._to_ndarray(segment)
+        outs = factory.vad(audio=wave, sampling_rate=sr, return_seconds=True)
+        return outs
+
     @staticmethod
     def _to_segment(y, sr=24000):
         memory_buffer = io.BytesIO()

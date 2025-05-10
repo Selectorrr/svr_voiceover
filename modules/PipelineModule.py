@@ -81,9 +81,8 @@ class PipelineModule:
             for i in range(count):
                 wave = all_waves[wave_idx]
                 wave_idx += 1
-                if wave is None:
-                    continue
-
+                if wave is None or not len(self.audio.get_voice_timestamps(wave, 22050)):
+                    break
                 if len(wave) >= 2 * FADE_LEN:
                     if i > 0:
                         wave[:FADE_LEN] *= numpy.linspace(0, 1, FADE_LEN)
