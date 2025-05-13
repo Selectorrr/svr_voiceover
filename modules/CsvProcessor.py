@@ -27,19 +27,34 @@ class CsvProcessor:
             return 0
 
     def _filter_by_exists(self, records, all_records):
+        for record in all_records:
+            record['audio'] = record['audio'].lower()
+
         all_wavs = set(
-            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./'),
+            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./').lower(),
                 glob('**/*.*', recursive=True, root_dir='workspace/resources')))
         done_wavs = set(
-            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./'),
+            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./').lower(),
                 glob('**/*.*', recursive=True, root_dir='workspace/dub')))
 
         todo = set(all_wavs) - set(done_wavs)
 
-        todo_records = [row for row in records if
-                        re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0]) and row['audio'].rsplit('.', 1)[0] in todo]
+        todo_records = [row for row in records if re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0])]
+        print(f"Найдено {len(todo_records)} записей содержащих руский текст из {len(records)}")
+        todo_records_with_files = [row for row in todo_records if
+                                   str(Path(row['audio']).with_suffix('')).lower() in todo]
+        if len(todo_records_with_files) != len(todo_records):
+            print('Внимание в csv есть файлы которых нет а рабочей директории')
+            nf = [r for r in records if str(Path(r['audio']).with_suffix('')) not in todo]
+            sel = nf[:5] + [r for r in nf[-5:] if r not in nf[:5]]
+
+            print(f"Всего не найдено: {len(nf)}")
+            for i, r in enumerate(sel, 1):
+                print(f"Пример: {i}) {r['audio']}")
+        todo_records = todo_records_with_files
         all_records = [row for row in all_records if
-                       re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0]) and row['audio'].rsplit('.', 1)[0] in all_wavs]
+                       re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0]) and str(
+                           Path(row['audio']).with_suffix('')) in all_wavs]
         todo_records = sorted(todo_records, key=lambda i: i['audio'])
         return todo_records, all_records
 
