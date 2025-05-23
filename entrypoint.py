@@ -34,6 +34,11 @@ if __name__ == '__main__':
                         help='Список провайдеров для выполнения (ONNX runtime)')
     parser.add_argument('--path_filter', type=str, default=None,
                         help='Фильтр реплик попадающих в озвучку по пути файла')
+    parser.add_argument('--min_len_deviation', type=int, default=25,
+                        help='Максимально допустимый порог отклонения по продолжительности синтезированного '
+                             'аудио в меньшую сторону в процентах')
+    parser.add_argument('--is_repeat', type=bool, default=False,
+                        help='Нужно ли повторно пытытаться озвучить не озвученные реплики')
     args = parser.parse_args()
 
     if args.n_jobs is None:

@@ -36,9 +36,10 @@ class PipelineModule:
 
     def synthesize_batch_with_split(self, inputs, max_text_len=200):
         split_inputs = []
-        mapping = []
+        mapping = []  # (orig_idx, chunks_count, expected_prosody_len)
 
         for idx, inp in enumerate(inputs):
+            pros_len = len(inp.prosody_wave_24k[:MAX_PROSODY_LEN])
             if len(inp.text) <= max_text_len:
                 split_inputs.append(SynthesisInput(
                     text=inp.text,
@@ -46,11 +47,10 @@ class PipelineModule:
                     timbre_wave_24k=inp.timbre_wave_24k,
                     prosody_wave_24k=inp.prosody_wave_24k[:MAX_PROSODY_LEN]
                 ))
-                mapping.append((idx, 1))
+                mapping.append((idx, 1, pros_len))
                 continue
 
             chunks = self.text.split_text(inp.text, max_text_len)
-
             for chunk in chunks:
                 split_inputs.append(SynthesisInput(
                     text=chunk,
@@ -58,7 +58,7 @@ class PipelineModule:
                     timbre_wave_24k=inp.timbre_wave_24k,
                     prosody_wave_24k=inp.prosody_wave_24k[:MAX_PROSODY_LEN]
                 ))
-            mapping.append((idx, len(chunks)))
+            mapping.append((idx, len(chunks), pros_len))
 
         job_n = ModelFactory.get_job_n()
 
@@ -74,9 +74,9 @@ class PipelineModule:
             }
         )
 
-        merged = []
+        merged = [None] * len(inputs)
         wave_idx = 0
-        for _, count in mapping:
+        for orig_idx, count, expected_len in mapping:
             parts = []
             for i in range(count):
                 wave = all_waves[wave_idx]
@@ -92,7 +92,16 @@ class PipelineModule:
 
                 parts.append(wave)
 
-            merged.append(numpy.concatenate(parts) if parts else None)
+            if not parts:
+                merged[orig_idx] = None
+                continue
+
+            concat = numpy.concatenate(parts)
+            # проверяем процент отклонения по продолжительности в меньшую сторону
+            if expected_len < len(concat) * (1 - self.config['min_len_deviation'] / 100):
+                merged[orig_idx] = None
+            else:
+                merged[orig_idx] = concat
 
         return merged
 
@@ -196,30 +205,36 @@ class PipelineModule:
         # Найдем все строки что нужно озвучить с учетом разных версий файлов
         todo_records, all_records = self.csv.find_changed_text_rows_csv()
 
-        # todo_records = [o for o in todo_records if len(self.text.get_text(o)[0]) <= 420]
-        todo_records = sorted(todo_records, key=lambda d: len(set(self.text.get_text(d)[0])), reverse=True)
-        # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
-        batches = [todo_records[i:i + self.config['batch_size']] for i in
-                   range(0, len(todo_records), self.config['batch_size'])]
+        while len(todo_records):
+            todo_records = sorted(todo_records, key=lambda d: len(set(self.text.get_text(d)[0])), reverse=True)
+            # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
+            batches = [todo_records[i:i + self.config['batch_size']] for i in
+                       range(0, len(todo_records), self.config['batch_size'])]
 
-        mp_context = get_context('spawn')
+            mp_context = get_context('spawn')
 
-        # если однопроцессный режим то надо вручную инициализировать модельки
-        if self.config['n_jobs'] == 1:
-            _worker_init(self.config)
+            # если однопроцессный режим то надо вручную инициализировать модельки
+            if self.config['n_jobs'] == 1:
+                _worker_init(self.config)
 
-        try:
-            pqdm(batches, self._voice_over_record,
-                 n_jobs=self.config['n_jobs'],
-                 mp_context=mp_context,
-                 smoothing=0,
-                 desc='Общий прогресс',
-                 initializer=_worker_init,
-                 initargs=(self.config,),
-                 position=0,
-                 exception_behaviour='immediate',
-                 dynamic_ncols=True
-                 )
-        except AssertionError as e:
-            # Неисправимая ошибка, может кончился баланс, завершаем работу
-            print(e)
+            try:
+                pqdm(batches, self._voice_over_record,
+                     n_jobs=self.config['n_jobs'],
+                     mp_context=mp_context,
+                     smoothing=0,
+                     desc='Общий прогресс',
+                     initializer=_worker_init,
+                     initargs=(self.config,),
+                     position=0,
+                     exception_behaviour='immediate',
+                     dynamic_ncols=True
+                     )
+            except AssertionError as e:
+                # Неисправимая ошибка, может кончился баланс, завершаем работу
+                print(e)
+                return
+            if not self.config['is_repeat']:
+                return
+            # Найдем файлы которые не удалось озвучить что-б попробовать еще раз
+            todo_records, all_records = self.csv.find_changed_text_rows_csv()
+
