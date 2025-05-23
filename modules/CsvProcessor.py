@@ -43,8 +43,8 @@ class CsvProcessor:
         print(f"Найдено {len(todo_records)} записей содержащих руский текст из {len(records)}")
         todo_records_with_files = [row for row in todo_records if
                                    str(Path(row['audio']).with_suffix('')).lower() in todo]
-        if len(todo_records_with_files) + len(done_wavs) != len(todo_records):
-            print('Внимание в csv есть файлы которых нет в рабочей директории')
+        if len(todo_records_with_files) != len(todo_records):
+            print('Внимание в csv есть файлы которых нет а рабочей директории')
             nf = [r for r in records if str(Path(r['audio']).with_suffix('')) not in todo]
             sel = nf[:5] + [r for r in nf[-5:] if r not in nf[:5]]
 
