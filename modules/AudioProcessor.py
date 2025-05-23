@@ -317,4 +317,7 @@ class AudioProcessor:
         mixed_audio = raw_audio.overlay(dub_segment)
         return self._to_ndarray(mixed_audio)
 
-
+    @staticmethod
+    def trimmed_audio_len(wave, sr, top_db=40):
+        raw_wave, _ = librosa.effects.trim(wave, top_db=top_db)
+        return len(raw_wave) / sr

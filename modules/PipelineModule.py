@@ -14,8 +14,11 @@ from modules.ModelFactory import ModelFactory
 from modules.SpeakerProcessor import SpeakerProcessor
 from modules.TextProcessor import TextProcessor
 
-MAX_PROSODY_LEN = 24_000 * 20
-FADE_LEN = int(0.1 * 22050)
+INPUT_SR = 24_000
+OUTPUT_SR = 22_050
+
+MAX_PROSODY_LEN = INPUT_SR * 20
+FADE_LEN = int(0.1 * OUTPUT_SR)
 
 onnxruntime.set_default_logger_severity(3)
 factory = None
@@ -81,7 +84,7 @@ class PipelineModule:
             for i in range(count):
                 wave = all_waves[wave_idx]
                 wave_idx += 1
-                if wave is None or not len(self.audio.get_voice_timestamps(wave, 22050)):
+                if wave is None or not len(self.audio.get_voice_timestamps(wave, OUTPUT_SR)):
                     parts = []
                     break
                 if len(wave) >= 2 * FADE_LEN:
@@ -96,6 +99,49 @@ class PipelineModule:
 
         return merged
 
+    def _retry_and_select_waves(self, inputs, waves, vo_items):
+        """
+        Для тех волн, длина которых сильно меньше prosody, выполняем повторный синтез
+        и сразу выбираем между оригиналом и повторной попыткой наиболее близкую к целевой длине.
+        Возвращает словарь: индекс -> выбранная волна для дальнейшего использования.
+        """
+        # вычисляем индексы коротких волн
+        short_idxs = []
+        for idx, wave in enumerate(waves):
+            if wave is None:
+                continue
+            # длина сгенерированной волны в секундах
+            wave_length = self.audio.trimmed_audio_len(wave, OUTPUT_SR)
+            # целевая длина (просодия) в секундах
+            prosody_length = self.audio.trimmed_audio_len(vo_items[idx]['raw_wave'], vo_items[idx]['raw_sr'])
+            # помечаем для повторного синтеза, если слишком короткая
+            if wave_length < prosody_length * self.config['min_len_deviation']:
+                short_idxs.append(idx)
+
+        # повторный синтез для коротких
+        retry_map = {}
+        if short_idxs:
+            retry_inputs = [inputs[i] for i in short_idxs]
+            retry_results = self.synthesize_batch_with_split(retry_inputs)
+            retry_map = {short_idxs[i]: retry_results[i] for i in range(len(short_idxs))}
+
+        # выбираем для каждой волны лучшую версию формируем итоговый список
+        chosen = []
+        for idx, orig_wave in enumerate(waves):
+            if orig_wave is None:
+                chosen.append(None)
+                continue
+            best_wave = orig_wave
+            if idx in retry_map and retry_map[idx] is not None:
+                second_wave = retry_map[idx]
+                len1 = len(orig_wave) / OUTPUT_SR
+                len2 = len(second_wave) / OUTPUT_SR
+                target = len(vo_items[idx]['raw_wave']) / vo_items[idx]['raw_sr']
+                if abs(len2 - target) < abs(len1 - target):
+                    best_wave = second_wave
+            chosen.append(best_wave)
+        return chosen
+
     def _efficient_audio_generation(self, vo_items):
         inputs = []
         for vo_item in vo_items:
@@ -106,6 +152,8 @@ class PipelineModule:
         # отправляем в svr tts
         # noinspection PyUnresolvedReferences
         waves = self.synthesize_batch_with_split(inputs)
+        # повторный синтез и выбор волны
+        waves = self._retry_and_select_waves(inputs, waves, vo_items)
 
         results = []
         for idx, wave in enumerate(waves):
@@ -121,18 +169,18 @@ class PipelineModule:
                 raw_len = len(vo_item['raw_wave']) / vo_item['raw_sr']
                 # уберем тишину тк это безболезненно
                 wave, _ = librosa.effects.trim(wave, top_db=40)
-                wave_len = len(wave) / 22050
+                wave_len = len(wave) / OUTPUT_SR
                 rate = wave_len / raw_len
                 if rate > 1:
                     # ускорим, но не сильнее чем на 50 процентов
-                    wave = self.audio.speedup(wave, 22050, rate, raw_len)
-            results.append((wave, 22050, vo_item['path'], vo_item['meta'], vo_item['raw_wave'], vo_item['raw_sr']))
+                    wave = self.audio.speedup(wave, OUTPUT_SR, rate, raw_len)
+            results.append((wave, OUTPUT_SR, vo_item['path'], vo_item['meta'], vo_item['raw_wave'], vo_item['raw_sr']))
         return results
 
     def _voice_over_items(self, vo_items):
         for vo_item in vo_items:
             # сэмпл просодии не может быть короче 1й секунды, дополняем тишиной если надо
-            vo_item['raw_wave_24k'] = self.audio.pad_with_silent(vo_item['raw_wave_24k'], 24_000)
+            vo_item['raw_wave_24k'] = self.audio.pad_with_silent(vo_item['raw_wave_24k'], INPUT_SR)
             # нейросеть для чисел с плавающей точкой использует 32 бита, потому приводим аудио в этот формат
             vo_item['style_wave_24k'] = vo_item['style_wave_24k'].astype(numpy.float32)
             vo_item['raw_wave_24k'] = vo_item['raw_wave_24k'].astype(numpy.float32)

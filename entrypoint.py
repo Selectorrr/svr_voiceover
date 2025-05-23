@@ -34,6 +34,8 @@ if __name__ == '__main__':
                         help='Список провайдеров для выполнения (ONNX runtime)')
     parser.add_argument('--path_filter', type=str, default=None,
                         help='Фильтр реплик попадающих в озвучку по пути файла')
+    parser.add_argument('--min_len_deviation', type=int, default=0.75,
+                        help='Минимальный порог длины синтезированной волны для повторного синтеза в случае галюцинации')
     args = parser.parse_args()
 
     if args.n_jobs is None:
