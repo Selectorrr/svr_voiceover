@@ -27,36 +27,36 @@ class CsvProcessor:
             return 0
 
     def _filter_by_exists(self, records, all_records):
-        for record in all_records:
-            record['audio'] = record['audio'].lower()
 
-        all_wavs = set(
-            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./').lower(),
+        resources = set(
+            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./'),
                 glob('**/*.*', recursive=True, root_dir='workspace/resources')))
-        done_wavs = set(
-            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./').lower(),
+        dub = set(
+            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./'),
                 glob('**/*.*', recursive=True, root_dir='workspace/dub')))
 
-        todo = set(all_wavs) - set(done_wavs)
+        todo = set(resources) - set(dub)
 
-        todo_records = [row for row in records if re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0])]
-        print(f"Найдено {len(todo_records)} записей содержащих руский текст из {len(records)}")
-        todo_records_with_files = [row for row in todo_records if
-                                   str(Path(row['audio']).with_suffix('')).lower() in todo]
-        if len(todo_records_with_files) != len(todo_records):
+        records_with_text = [row for row in records if re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0])]
+        print(f"Найдено {len(records_with_text)} записей содержащих руский текст из {len(records)}")
+        records_with_files = [row for row in records_with_text if
+                                   str(Path(row['audio']).with_suffix('')) in resources]
+        if len(records_with_files) != len(records_with_text):
             print('Внимание в csv есть файлы которых нет а рабочей директории')
-            nf = [r for r in records if str(Path(r['audio']).with_suffix('')) not in todo]
+            nf = [r for r in records if str(Path(r['audio']).with_suffix('')) not in resources]
             sel = nf[:5] + [r for r in nf[-5:] if r not in nf[:5]]
 
             print(f"Всего не найдено: {len(nf)}")
             for i, r in enumerate(sel, 1):
                 print(f"Пример: {i}) {r['audio']}")
-        todo_records = todo_records_with_files
+        todo_records_with_files = [row for row in records_with_text if
+                                   str(Path(row['audio']).with_suffix('')) in todo]
+        records_with_text = todo_records_with_files
         all_records = [row for row in all_records if
                        re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0]) and str(
-                           Path(row['audio']).with_suffix('')) in all_wavs]
-        todo_records = sorted(todo_records, key=lambda i: i['audio'])
-        return todo_records, all_records
+                           Path(row['audio']).with_suffix('')) in resources]
+        records_with_text = sorted(records_with_text, key=lambda i: i['audio'])
+        return records_with_text, all_records
 
     def find_changed_text_rows_csv(self):
         """

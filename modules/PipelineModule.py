@@ -196,7 +196,11 @@ class PipelineModule:
         for record in records:
             path = Path(f"workspace/resources/{record['audio']}")
             # Прочитаем оригинальный аудио файл и его громкость для определения просодии
-            raw_wave_24k, meta, raw_wave, raw_sr = self.audio.load_audio(str(path))
+            try:
+                raw_wave_24k, meta, raw_wave, raw_sr = self.audio.load_audio(str(path))
+            except ValueError as e:
+                print(e)
+                continue
             # Определяем текст для озвучки
             text, is_accented = self.text.get_text(record)
 
