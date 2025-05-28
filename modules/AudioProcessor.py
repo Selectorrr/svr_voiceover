@@ -18,6 +18,8 @@ class AudioProcessor:
         self.tone_sample_len = config['tone_sample_len']
         self.sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
         self.is_respect_mos = config['is_respect_mos']
+        self.is_strict_len = config['is_strict_len']
+        self.is_use_voice_len = config['is_use_voice_len']
 
         pass
 
@@ -211,12 +213,25 @@ class AudioProcessor:
         return data, sr
 
     @staticmethod
-    def _audio_len(wav, sr):
+    def audio_len(wav, sr):
         audio_length = len(wav) / sr
         return audio_length
 
+    def rtrim_audio(self, y, sr, lower_bound=1, top_db=40):
+        orig_len = self.audio_len(y, sr)
+        if not lower_bound or orig_len <= lower_bound:
+            return y
+        _, index = librosa.effects.trim(y, top_db=top_db)
+        y = y[:index[1]]
+        return y
+
+    def voice_len(self, y, sr, lower_bound=1):
+        y = self.rtrim_audio(y, sr, lower_bound)
+        r_len = self.audio_len(y, sr)
+        return r_len
+
     def pad_with_silent(self, raw_wave, raw_sr):
-        target_length = self._audio_len(raw_wave, raw_sr)
+        target_length = self.audio_len(raw_wave, raw_sr)
         silent_len = max(1 - target_length, 0.1) * 1000
         raw_segment = self._to_segment(raw_wave, raw_sr) + AudioSegment.silent(duration=silent_len, frame_rate=raw_sr)
 
@@ -321,3 +336,8 @@ class AudioProcessor:
     def trimmed_audio_len(wave, sr, top_db=40):
         raw_wave, _ = librosa.effects.trim(wave, top_db=top_db)
         return len(raw_wave) / sr
+
+    def rtrim_if_voice_len(self, wave, sr, top_db=40):
+        if self.is_strict_len and self.is_use_voice_len:
+            wave = self.rtrim_audio(wave, sr, top_db=top_db)
+        return wave

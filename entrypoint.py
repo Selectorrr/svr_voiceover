@@ -28,6 +28,9 @@ if __name__ == '__main__':
     parser.add_argument('--csv_delimiter', type=str, default=',', help='Разделитель, использующийся в csv.')
     parser.add_argument('--is_strict_len', type=bool, default=False,
                         help='Должна ли длина аудио строго совпадать с оригиналом')
+    parser.add_argument('--is_use_voice_len', type=bool, default=True,
+                        help='Если строгая длина и is_use_voice_len=true то в качестве продолжительности будет '
+                             'учитываться конец речи в аудио, а не длина всего аудио')
     parser.add_argument('--is_respect_mos', type=bool, default=False,
                         help='Нужно ли учитывать качество звука для построения сэмпла голоса')
     parser.add_argument('--providers', nargs='+', default=get_def_providers(),

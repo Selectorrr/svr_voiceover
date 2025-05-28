@@ -148,7 +148,8 @@ class PipelineModule:
             # берем наш текст и сэмплы тембра и просодии и упаковываем в задачи для синтеза
             inputs.append(SynthesisInput(text=vo_item['text'], stress=not vo_item['is_accented'],
                                          timbre_wave_24k=vo_item['style_wave_24k'],
-                                         prosody_wave_24k=vo_item['raw_wave_24k']))
+                                         prosody_wave_24k=self.audio.rtrim_if_voice_len(vo_item['raw_wave_24k'],
+                                                                                        24000)))
         # отправляем в svr tts
         # noinspection PyUnresolvedReferences
         waves = self.synthesize_batch_with_split(inputs)
@@ -166,7 +167,10 @@ class PipelineModule:
 
             # если длина аудио строго должна совпадать с оригиналом
             if self.config['is_strict_len']:
-                raw_len = len(vo_item['raw_wave']) / vo_item['raw_sr']
+                if self.config['is_use_voice_len']:
+                    raw_len = self.audio.voice_len(vo_item['raw_wave'], vo_item['raw_sr'])
+                else:
+                    raw_len = self.audio.audio_len(vo_item['raw_wave'], vo_item['raw_sr'])
                 # уберем тишину тк это безболезненно
                 wave, _ = librosa.effects.trim(wave, top_db=40)
                 wave_len = len(wave) / OUTPUT_SR
