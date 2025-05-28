@@ -247,9 +247,12 @@ class AudioProcessor:
         start, end = idx
         return start
 
-    def align_by_samples(self, wave, raw_wave, top_db=40):
-        target_len = raw_wave.shape[0]
-        wave_len = wave.shape[0]
+    def align_by_samples(self, wave, raw_wave, raw_sr, top_db=40):
+        orig_len = raw_wave.shape[0]
+        if self.is_use_voice_len:
+            target_len = int(self.voice_len(raw_wave, raw_sr) * raw_sr)
+        else:
+            target_len = orig_len
 
         start_wave = self.get_sound_center(wave, top_db)
         start_raw = self.get_sound_center(raw_wave, top_db)
@@ -257,7 +260,7 @@ class AudioProcessor:
         desired_shift = start_raw - start_wave
 
         max_left_shift = start_wave
-        max_right_shift = target_len - (wave_len - start_wave)
+        max_right_shift = target_len - (wave.shape[0] - start_wave)
 
         # Ограничиваем shift, чтобы полезный сигнал полностью влез
         safe_shift = int(numpy.clip(desired_shift, -max_left_shift, max_right_shift))
@@ -270,11 +273,18 @@ class AudioProcessor:
             wave = wave[-safe_shift:]
 
         # Дополняем справа до нужной длины
+        if self.is_use_voice_len:
+            wave = self.pad_or_trim_to_len(target_len, wave)
+        # и в любом случае возвращаем длину orig_len
+        wave = self.pad_or_trim_to_len(orig_len, wave)
+        return wave
+
+    def pad_or_trim_to_len(self, target_len, wave):
         if wave.shape[0] < target_len:
             pad = numpy.zeros((target_len - wave.shape[0],) + wave.shape[1:], dtype=wave.dtype)
             wave = numpy.concatenate([wave, pad], axis=0)
         else:
-            wave = wave[:target_len]  # подстраховка, не должно сработать при <=
+            wave = wave[:target_len]
         return wave
 
     def prepare_prosody_wave(self, raw_wave, raw_sr):
