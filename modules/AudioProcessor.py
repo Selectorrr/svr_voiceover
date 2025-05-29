@@ -7,6 +7,7 @@ from pathlib import Path
 
 import librosa
 import numpy
+import numpy as np
 import pyloudnorm
 import soundfile
 from filelock import FileLock, Timeout
@@ -350,4 +351,7 @@ class AudioProcessor:
     def rtrim_if_voice_len(self, wave, sr, top_db=40):
         if self.is_strict_len and self.is_use_voice_len:
             wave = self.rtrim_audio(wave, sr, top_db=top_db)
+            if len(wave) < sr:
+                pad = sr - len(wave)
+                wave = np.concatenate([wave, np.zeros(pad, dtype=wave.dtype)])
         return wave
