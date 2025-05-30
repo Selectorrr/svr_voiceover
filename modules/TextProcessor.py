@@ -20,6 +20,8 @@ class TextProcessor:
             return record['text'], False
 
     def is_sound_word(self, sentence):
+        if sentence and 'да' in sentence.lower():
+            return False
         # Регулярное выражение для звуковых слов, учитывающее повторяющиеся и чередующиеся буквы
         sound_pattern = re.compile(r'^(?:[А-Яа-я]{1,3}(?:[-–—][А-Яа-я]{1,3})+)[!?.…]*$')
 

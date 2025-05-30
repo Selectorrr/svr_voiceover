@@ -66,16 +66,20 @@ class PipelineModule:
         job_n = ModelFactory.get_job_n()
 
         # noinspection PyUnresolvedReferences
-        all_waves = factory.svr_tts.synthesize_batch(
-            split_inputs,
-            tqdm_kwargs={
-                'leave': False,
-                'smoothing': 0,
-                'position': job_n + 1,
-                'postfix': f"job_n {job_n}",
-                'dynamic_ncols': True
-            }
-        )
+        try:
+            all_waves = factory.svr_tts.synthesize_batch(
+                split_inputs,
+                tqdm_kwargs={
+                    'leave': False,
+                    'smoothing': 0,
+                    'position': job_n + 1,
+                    'postfix': f"job_n {job_n}",
+                    'dynamic_ncols': True
+                }
+            )
+        except Exception as e:
+            print(e)
+            all_waves = [None] * len(split_inputs)
 
         merged = []
         wave_idx = 0
@@ -178,7 +182,8 @@ class PipelineModule:
                 if rate > 1:
                     # ускорим, но не сильнее чем на 50 процентов
                     wave = self.audio.speedup(wave, OUTPUT_SR, rate, raw_len)
-            results.append((wave, OUTPUT_SR, vo_item['path'], vo_item['meta'], vo_item['raw_wave'], vo_item['raw_sr']))
+            results.append((wave, OUTPUT_SR, vo_item['path'], vo_item['meta'], vo_item['raw_wave'], vo_item['raw_sr'],
+                            vo_item['raw_wave_24k']))
         return results
 
     def _voice_over_items(self, vo_items):
@@ -223,15 +228,16 @@ class PipelineModule:
                 'raw_sr': raw_sr
             }
             vo_items.append(vo_item)
-
+        if not len(vo_items):
+            return
         # Озвучиваем батч
         results = self._voice_over_items(vo_items)
 
-        for dub, sr, i_path, i_meta, i_raw_wave, i_raw_sr in results:
+        for dub, sr, i_path, i_meta, i_raw_wave, i_raw_sr, i_raw_wave_24k in results:
+            if self.config['is_strict_len']:
+                dub = self.audio.align_by_samples(dub, i_raw_wave_24k, INPUT_SR)
             # Восстановим характеристики оригинального аудио
             dub, sr = self.audio.restore_meta(dub, sr, i_meta)
-            if self.config['is_strict_len']:
-                dub = self.audio.align_by_samples(dub, i_raw_wave, i_raw_sr)
             # Сохраняем дубляж
             dub_file = Path(f"workspace/dub/{i_path}")
             dub_file.parent.mkdir(parents=True, exist_ok=True)

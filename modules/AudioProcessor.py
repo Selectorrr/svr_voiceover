@@ -12,6 +12,7 @@ import pyloudnorm
 import soundfile
 from filelock import FileLock, Timeout
 from pydub import AudioSegment
+from pydub.silence import detect_silence
 
 
 class AudioProcessor:
@@ -93,6 +94,8 @@ class AudioProcessor:
                 raise ValueError(f"Unsupported file: {e}")
         raw_wave, raw_sr = wave, sr
         segment = self._to_segment(wave, sr)
+        if not self.is_has_sound(segment):
+            raise ValueError(f"No sound: {path}")
 
         channels = segment.channels
         if channels > 1:
@@ -355,3 +358,13 @@ class AudioProcessor:
                 pad = sr - len(wave)
                 wave = np.concatenate([wave, np.zeros(pad, dtype=wave.dtype)])
         return wave
+
+    @staticmethod
+    def is_has_sound(seg, silence_thresh=-40, min_silence_len=100):
+        silent_ranges = detect_silence(
+            seg,
+            min_silence_len=min_silence_len,
+            silence_thresh=silence_thresh
+        )
+        total_silence = sum(end - start for start, end in silent_ranges)
+        return total_silence < len(seg)
