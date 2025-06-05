@@ -14,13 +14,13 @@ from filelock import FileLock, Timeout
 from pydub import AudioSegment
 from pydub.silence import detect_silence
 
+MAX_PROSODY_LEN = 20
 
 class AudioProcessor:
     def __init__(self, config):
         self.tone_sample_len = config['tone_sample_len']
         self.sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
         self.is_respect_mos = config['is_respect_mos']
-        self.is_strict_len = config['is_strict_len']
         self.is_use_voice_len = config['is_use_voice_len']
 
         pass
@@ -291,20 +291,6 @@ class AudioProcessor:
             wave = wave[:target_len]
         return wave
 
-    def prepare_prosody_wave(self, raw_wave, raw_sr):
-        segment_orig = self._to_segment(raw_wave, raw_sr)
-        segment = segment_orig
-        # нужна одна секунда звука минимум
-        while int(len(librosa.effects.trim(self._to_ndarray(segment)[0], top_db=40)[0]) / raw_sr * 1000) < 1000:
-            segment += segment_orig
-        if raw_sr != 24000:
-            segment = segment.set_frame_rate(24_000)
-        raw_wave, raw_sr = self._to_ndarray(segment)
-        raw_wave, _ = librosa.effects.trim(raw_wave, top_db=40)
-        # 100ms тишины в конце
-        raw_wave = numpy.pad(raw_wave, (0, int(0.1 * raw_sr)), 'constant')
-        return raw_wave.astype(numpy.float32)
-
     def restore_meta(self, wave, sr, meta):
         segment = self._to_segment(wave, sr)
         segment = segment.set_frame_rate(meta['frame_rate'])
@@ -351,12 +337,20 @@ class AudioProcessor:
         raw_wave, _ = librosa.effects.trim(wave, top_db=top_db)
         return len(raw_wave) / sr
 
-    def rtrim_if_voice_len(self, wave, sr, top_db=40):
-        if self.is_strict_len and self.is_use_voice_len:
-            wave = self.rtrim_audio(wave, sr, top_db=top_db)
-            if len(wave) < sr:
-                pad = sr - len(wave)
-                wave = np.concatenate([wave, np.zeros(pad, dtype=wave.dtype)])
+    def prepare_prosody(self, wave, sr, top_db=40):
+        # обрезаем тишину справа
+        wave = self.rtrim_audio(wave, sr, top_db=top_db)
+        # органичиваем максимальный размер
+        wave = wave[:MAX_PROSODY_LEN * sr]
+        keep = int(0.1 * sr)  # 100 мс
+        # убираем последние 100 мс тк добавим ниже тишины
+        wave = wave[:-keep]
+        # фейдим новые последние 100 мс что-б не было щелчка
+        start_fade = max(len(wave) - keep, 0)
+        ramp = np.linspace(1.0, 0.0, keep, endpoint=True)
+        wave[start_fade:] *= ramp
+        # дополняем до 1 сек или 100 мс тишины
+        wave = self.pad_with_silent(wave, sr)
         return wave
 
     @staticmethod

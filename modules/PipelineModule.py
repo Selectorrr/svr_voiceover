@@ -17,7 +17,6 @@ from modules.TextProcessor import TextProcessor
 INPUT_SR = 24_000
 OUTPUT_SR = 22_050
 
-MAX_PROSODY_LEN = INPUT_SR * 20
 FADE_LEN = int(0.1 * OUTPUT_SR)
 
 onnxruntime.set_default_logger_severity(3)
@@ -47,7 +46,7 @@ class PipelineModule:
                     text=inp.text,
                     stress=inp.stress,
                     timbre_wave_24k=inp.timbre_wave_24k,
-                    prosody_wave_24k=inp.prosody_wave_24k[:MAX_PROSODY_LEN]
+                    prosody_wave_24k=inp.prosody_wave_24k
                 ))
                 mapping.append((idx, 1))
                 continue
@@ -59,7 +58,7 @@ class PipelineModule:
                     text=chunk,
                     stress=inp.stress,
                     timbre_wave_24k=inp.timbre_wave_24k,
-                    prosody_wave_24k=inp.prosody_wave_24k[:MAX_PROSODY_LEN]
+                    prosody_wave_24k=inp.prosody_wave_24k
                 ))
             mapping.append((idx, len(chunks)))
 
@@ -152,8 +151,8 @@ class PipelineModule:
             # берем наш текст и сэмплы тембра и просодии и упаковываем в задачи для синтеза
             inputs.append(SynthesisInput(text=vo_item['text'], stress=not vo_item['is_accented'],
                                          timbre_wave_24k=vo_item['style_wave_24k'],
-                                         prosody_wave_24k=self.audio.rtrim_if_voice_len(vo_item['raw_wave_24k'],
-                                                                                        24000)))
+                                         prosody_wave_24k=self.audio.prepare_prosody(vo_item['raw_wave_24k'],
+                                                                                     24000)))
         # отправляем в svr tts
         # noinspection PyUnresolvedReferences
         waves = self.synthesize_batch_with_split(inputs)
@@ -188,8 +187,6 @@ class PipelineModule:
 
     def _voice_over_items(self, vo_items):
         for vo_item in vo_items:
-            # сэмпл просодии не может быть короче 1й секунды, дополняем тишиной если надо
-            vo_item['raw_wave_24k'] = self.audio.pad_with_silent(vo_item['raw_wave_24k'], INPUT_SR)
             # нейросеть для чисел с плавающей точкой использует 32 бита, потому приводим аудио в этот формат
             vo_item['style_wave_24k'] = vo_item['style_wave_24k'].astype(numpy.float32)
             vo_item['raw_wave_24k'] = vo_item['raw_wave_24k'].astype(numpy.float32)
