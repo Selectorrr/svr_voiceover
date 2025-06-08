@@ -254,7 +254,7 @@ class PipelineModule:
         todo_records, all_records = self.csv.find_changed_text_rows_csv()
 
         # todo_records = [o for o in todo_records if len(self.text.get_text(o)[0]) <= 420]
-        todo_records = sorted(todo_records, key=lambda d: len(set(self.text.get_text(d)[0])), reverse=True)
+        todo_records = sorted(todo_records, key=lambda d: len(set(self.text.get_text(d)[0])) * len(self.text.get_text(d)[0]), reverse=True)
         # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
         batches = [todo_records[i:i + self.config['batch_size']] for i in
                    range(0, len(todo_records), self.config['batch_size'])]
