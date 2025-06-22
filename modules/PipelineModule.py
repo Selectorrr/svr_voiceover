@@ -86,8 +86,9 @@ class PipelineModule:
             parts = []
             for i in range(count):
                 wave = all_waves[wave_idx]
+                input = split_inputs[wave_idx]
                 wave_idx += 1
-                if wave is None or not len(self.audio.get_voice_timestamps(wave, OUTPUT_SR)):
+                if wave is None or not self.audio.validate(wave, OUTPUT_SR, input.text):
                     parts = []
                     break
                 if len(wave) >= 2 * FADE_LEN:
@@ -252,31 +253,37 @@ class PipelineModule:
     def run(self):
         # Найдем все строки что нужно озвучить с учетом разных версий файлов
         todo_records, all_records = self.csv.find_changed_text_rows_csv()
+        todo_records = sorted(todo_records,
+                              key=lambda d: len(set(self.text.get_text(d)[0])) * len(self.text.get_text(d)[0]),
+                              reverse=True)
+        while len(todo_records):
+            # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
+            batches = [todo_records[i:i + self.config['batch_size']] for i in
+                       range(0, len(todo_records), self.config['batch_size'])]
 
-        # todo_records = [o for o in todo_records if len(self.text.get_text(o)[0]) <= 420]
-        todo_records = sorted(todo_records, key=lambda d: len(set(self.text.get_text(d)[0])) * len(self.text.get_text(d)[0]), reverse=True)
-        # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
-        batches = [todo_records[i:i + self.config['batch_size']] for i in
-                   range(0, len(todo_records), self.config['batch_size'])]
+            mp_context = get_context('spawn')
 
-        mp_context = get_context('spawn')
+            # если однопроцессный режим то надо вручную инициализировать модельки
+            if self.config['n_jobs'] == 1:
+                _worker_init(self.config)
 
-        # если однопроцессный режим то надо вручную инициализировать модельки
-        if self.config['n_jobs'] == 1:
-            _worker_init(self.config)
+            try:
+                pqdm(batches, self._voice_over_record,
+                     n_jobs=self.config['n_jobs'],
+                     mp_context=mp_context,
+                     smoothing=0,
+                     desc='Общий прогресс',
+                     initializer=_worker_init,
+                     initargs=(self.config,),
+                     position=0,
+                     exception_behaviour='immediate',
+                     dynamic_ncols=True
+                     )
+            except AssertionError as e:
+                # Неисправимая ошибка, может кончился баланс, завершаем работу
+                print(e)
 
-        try:
-            pqdm(batches, self._voice_over_record,
-                 n_jobs=self.config['n_jobs'],
-                 mp_context=mp_context,
-                 smoothing=0,
-                 desc='Общий прогресс',
-                 initializer=_worker_init,
-                 initargs=(self.config,),
-                 position=0,
-                 exception_behaviour='immediate',
-                 dynamic_ncols=True
-                 )
-        except AssertionError as e:
-            # Неисправимая ошибка, может кончился баланс, завершаем работу
-            print(e)
+            todo_records, all_records = self.csv.find_changed_text_rows_csv()
+            todo_records = sorted(todo_records,
+                                  key=lambda d: len(set(self.text.get_text(d)[0])) * len(self.text.get_text(d)[0]),
+                                  reverse=True)

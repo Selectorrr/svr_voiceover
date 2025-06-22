@@ -1,5 +1,6 @@
 import os
 
+import onnx_asr
 from appdirs import user_cache_dir
 from huggingface_hub import hf_hub_download
 
@@ -20,3 +21,5 @@ for key in MODEL_FILES.keys():
 
 hf_hub_download(repo_id="selectorrrr/wav2vec2mos", filename="wav2vec2mos.onnx",
                 cache_dir=user_cache_dir("svr_voiceover", "SynthVoiceRu"))
+
+onnx_asr.load_model("onnx-community/whisper-large-v3-turbo")

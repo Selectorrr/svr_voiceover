@@ -8,7 +8,7 @@ from appdirs import user_cache_dir
 from huggingface_hub import hf_hub_download
 from svr_tts import SVR_TTS
 
-from modules.VadModel import VadModel
+from modules.AsrModel import AsrModel
 
 
 class ModelFactory:
@@ -34,9 +34,9 @@ class ModelFactory:
         return session
 
     @cached_property
-    def vad(self):
-        vad = VadModel(providers=self.config["providers"], provider_options=self._get_provider_opts())
-        return vad
+    def asr(self):
+        asr = AsrModel(providers=self.config["providers"], provider_options=self._get_provider_opts())
+        return asr
 
 
     def _get_provider_opts(self):

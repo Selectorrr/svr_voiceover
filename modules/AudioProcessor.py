@@ -1,5 +1,7 @@
+import difflib
 import io
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -15,6 +17,7 @@ from pydub import AudioSegment
 from pydub.silence import detect_silence
 
 MAX_PROSODY_LEN = 20
+
 
 class AudioProcessor:
     def __init__(self, config):
@@ -139,33 +142,27 @@ class AudioProcessor:
                     pass
 
         lock = FileLock(lock_path, timeout=10)
-        try:
-            with lock:
-                new_seg = self._to_segment(wave_24k, 24_000)
-                if voice_path.exists():
-                    segment = AudioSegment.from_wav(voice_path)
-                    if len(segment) >= self.tone_sample_len:
-                        return self._to_ndarray(segment)[0]
-                    if mos >= mos_good:
-                        end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
-                        if not self._is_similar(end_slice, new_seg):
-                            segment += new_seg
-                else:
-                    segment = new_seg
-
-                segment = self._fix_len(segment)
-
+        with lock:
+            new_seg = self._to_segment(wave_24k, 24_000)
+            if voice_path.exists():
+                segment = AudioSegment.from_wav(voice_path)
+                if len(segment) >= self.tone_sample_len:
+                    return self._to_ndarray(segment)[0]
                 if mos >= mos_good:
-                    voice_path.parent.mkdir(parents=True, exist_ok=True)
-                    tmp_path = voice_path.with_suffix(".wav.tmp")
-                    segment.export(tmp_path, format="wav")
-                    tmp_path.replace(voice_path)  # atomic rename
-                return self._to_ndarray(segment)[0]
-        except Timeout:
-            raise RuntimeError(f"Не удалось взять блокировку {lock_path} за 5 сек")
-        finally:
-            if os.path.exists(lock_path):
-                os.remove(lock_path)
+                    end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
+                    if not self._is_similar(end_slice, new_seg):
+                        segment += new_seg
+            else:
+                segment = new_seg
+
+            segment = self._fix_len(segment)
+
+            if mos >= mos_good:
+                voice_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp_path = voice_path.with_suffix(".wav.tmp")
+                segment.export(tmp_path, format="wav")
+                tmp_path.replace(voice_path)  # atomic rename
+            return self._to_ndarray(segment)[0]
 
     def _fix_len(self, segment):
         while len(segment) < 1000:
@@ -192,14 +189,29 @@ class AudioProcessor:
         mos = float(outs[0].reshape(-1).mean())
         return mos
 
-    def get_voice_timestamps(self, wave, sr):
+    def validate(self, wave, sr, text_ref, threshold=0.75):
+        if bool(re.search(r'[A-Za-z0-9]', text_ref)):
+            # все равно распознать такой не сможем, редкая ситуация потому считаем валидным
+            return True
         from modules.PipelineModule import factory
         if sr != 16_000:
             segment = self._to_segment(wave, sr)
             segment = segment.set_frame_rate(16_000)
             wave, sr = self._to_ndarray(segment)
-        outs = factory.vad(audio=wave, sampling_rate=sr, return_seconds=True)
-        return outs
+        outs = factory.asr(audio=wave)
+        similarity = self._similarity(text_ref, outs)
+        return similarity >= threshold
+
+    def _normalize(self, text):
+        text = text.lower().replace('ё', 'е').replace('й', 'и')
+        # нижний регистр, убрать пунктуацию, пробелы
+        text = re.sub(r'[^\w]', '', text)
+        # удалить повторяющиеся подряд символы (например: "оооо" → "о")
+        text = re.sub(r'(.)\1+', r'\1', text)
+        return text
+
+    def _similarity(self, a, b):
+        return difflib.SequenceMatcher(None, self._normalize(a), self._normalize(b)).ratio()
 
     @staticmethod
     def _to_segment(y, sr=24000):
