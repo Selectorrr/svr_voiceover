@@ -34,7 +34,7 @@ RUN wget https://github.com/vgmstream/vgmstream-releases/releases/download/night
     && rm vgmstream-linux-cli.tar.gz
 
 # === Этап выполнения (runtime) ===
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu22.04 AS runtime
 LABEL authors="SynthVoiceRu"
 
 # Устанавливаем runtime-утилиты и Python 3.11
