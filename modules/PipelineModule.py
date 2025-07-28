@@ -232,10 +232,12 @@ class PipelineModule:
         results = self._voice_over_items(vo_items)
 
         for dub, sr, i_path, i_meta, i_raw_wave, i_raw_sr, i_raw_wave_24k in results:
-            if self.config['is_strict_len']:
-                dub = self.audio.align_by_samples(dub, i_raw_wave_24k, INPUT_SR)
             # Восстановим характеристики оригинального аудио
             dub, sr = self.audio.restore_meta(dub, sr, i_meta)
+
+            if self.config['is_strict_len']:
+                dub = self.audio.align_by_samples(dub, sr, i_raw_wave_24k, INPUT_SR)
+
             # Сохраняем дубляж
             dub_file = Path(f"workspace/dub/{i_path}")
             dub_file.parent.mkdir(parents=True, exist_ok=True)

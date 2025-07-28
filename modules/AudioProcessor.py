@@ -263,7 +263,10 @@ class AudioProcessor:
         start, end = idx
         return start
 
-    def align_by_samples(self, wave, raw_wave, raw_sr, top_db=40):
+    def align_by_samples(self, wave, wave_sr, raw_wave, raw_sr, top_db=40):
+        if wave_sr != raw_sr:
+            raw_wave, raw_sr = self._to_ndarray(self._to_segment(raw_wave, raw_sr).set_frame_rate(wave_sr))
+
         orig_len = raw_wave.shape[0]
         if self.is_use_voice_len:
             target_len = int(self.voice_len(raw_wave, raw_sr) * raw_sr)

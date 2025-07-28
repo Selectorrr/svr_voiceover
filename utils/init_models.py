@@ -8,9 +8,9 @@ cache_dir = user_cache_dir("svr_tts", "SynthVoiceRu")
 os.makedirs(cache_dir, exist_ok=True)
 os.environ["TQDM_POSITION"] = "-1"
 
-REPO_ID = "selectorrrr/svr-tts-large-v1"
+REPO_ID = "selectorrrr/svr-tts-large"
 MODEL_FILES = {
-    "base": "svr_base.onnx",
+    "base": "svr_base_v2.onnx",
     "semantic": "svr_semantic.onnx",
     "encoder": "svr_encoder.onnx",
     "estimator": "svr_estimator.onnx",
