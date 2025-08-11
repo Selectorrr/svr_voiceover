@@ -1,3 +1,4 @@
+import difflib
 import re
 
 
@@ -46,3 +47,15 @@ class TextProcessor:
             chunks.append(current)
         return chunks
 
+
+def normalize(text):
+    text = text.lower().replace('ё', 'е').replace('й', 'и')
+    # нижний регистр, убрать пунктуацию, пробелы
+    text = re.sub(r'[^\w]', '', text)
+    # удалить повторяющиеся подряд символы (например: "оооо" → "о")
+    text = re.sub(r'(.)\1+', r'\1', text)
+    return text
+
+
+def similarity(a, b):
+    return difflib.SequenceMatcher(None, normalize(a), normalize(b)).ratio()

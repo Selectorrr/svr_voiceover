@@ -1,4 +1,3 @@
-import difflib
 import io
 import os
 import re
@@ -12,12 +11,15 @@ import numpy
 import numpy as np
 import pyloudnorm
 import soundfile
-from filelock import FileLock, Timeout
+from filelock import FileLock
+from onnx_asr.asr import TimestampedResult
 from pydub import AudioSegment
 from pydub.silence import detect_silence
 
-MAX_PROSODY_LEN = 20
+from modules.TextProcessor import similarity
 
+MAX_PROSODY_LEN = 20
+OUTPUT_SR = 22_050
 
 class AudioProcessor:
     def __init__(self, config):
@@ -189,29 +191,21 @@ class AudioProcessor:
         mos = float(outs[0].reshape(-1).mean())
         return mos
 
-    def validate(self, wave, sr, text_ref, threshold=0.75):
+    def validate_and_fix(self, wave_22050, sr, text_ref, threshold=0.75):
         if bool(re.search(r'[A-Za-z0-9]', text_ref)):
             # все равно распознать такой не сможем, редкая ситуация потому считаем валидным
-            return True
+            return True, wave_22050
         from modules.PipelineModule import factory
-        if sr != 16_000:
-            segment = self._to_segment(wave, sr)
-            segment = segment.set_frame_rate(16_000)
-            wave, sr = self._to_ndarray(segment)
-        outs = factory.asr(audio=wave)
-        similarity = self._similarity(text_ref, outs)
-        return similarity >= threshold
 
-    def _normalize(self, text):
-        text = text.lower().replace('ё', 'е').replace('й', 'и')
-        # нижний регистр, убрать пунктуацию, пробелы
-        text = re.sub(r'[^\w]', '', text)
-        # удалить повторяющиеся подряд символы (например: "оооо" → "о")
-        text = re.sub(r'(.)\1+', r'\1', text)
-        return text
+        segment = self._to_segment(wave_22050, sr)
+        segment = segment.set_frame_rate(16_000)
+        wave_16k, _ = self._to_ndarray(segment)
+        wave_16k = self.rtrim_audio(wave_16k, 16_000, top_db=40)
 
-    def _similarity(self, a, b):
-        return difflib.SequenceMatcher(None, self._normalize(a), self._normalize(b)).ratio()
+        asr_result = factory.asr.recognize(audio=wave_16k)
+        wave_22050 = self.trim_by_vad(wave_22050, OUTPUT_SR, asr_result, text_ref)
+        sim = similarity(text_ref, asr_result.text)
+        return sim >= threshold, wave_22050
 
     @staticmethod
     def _to_segment(y, sr=24000):
@@ -377,3 +371,33 @@ class AudioProcessor:
         )
         total_silence = sum(end - start for start, end in silent_ranges)
         return total_silence < len(seg)
+
+    def trim_by_vad(self, wave_22050, sr, asr:TimestampedResult, ref_text, pad_ms=250, fade_ms=10, hallucination_len=200):
+        """
+        self.model — уже загружен (onnx_asr), распознаёт из numpy.
+        self.to_segment(np,sr) -> AudioSegment ; self.to_numpy(seg) -> (np,sr)
+        """
+        from modules.PipelineModule import factory
+        # ASR
+        last_end_ms = factory.asr.end_time(asr, ref_text)
+
+        if last_end_ms is None:
+            # кириллицы не нашли — просто вернем то что пришло
+            return wave_22050
+
+        seg = self._to_segment(wave_22050, sr)
+        dur_ms = len(seg)
+
+        # пад и клип
+        cut_ms = last_end_ms + pad_ms
+        if cut_ms >= dur_ms:
+            return wave_22050
+
+        # режем только если есть что отрезать (>200мс)
+        if dur_ms - cut_ms > hallucination_len:
+            out = seg[:cut_ms].fade_out(fade_ms)
+        else:
+            out = seg
+
+        trimmed_np, _ = self._to_ndarray(out)
+        return trimmed_np

@@ -16,10 +16,12 @@ MODEL_FILES = {
     "estimator": "svr_estimator.onnx",
     "vocoder": "svr_vocoder.onnx",
 }
+
 for key in MODEL_FILES.keys():
     hf_hub_download(repo_id=REPO_ID, filename=MODEL_FILES[key], cache_dir=cache_dir)
 
 hf_hub_download(repo_id="selectorrrr/wav2vec2mos", filename="wav2vec2mos.onnx",
                 cache_dir=user_cache_dir("svr_voiceover", "SynthVoiceRu"))
 
-onnx_asr.load_model("onnx-community/whisper-large-v3-turbo")
+providers = ['CPUExecutionProvider']
+onnx_asr.load_model("alphacep/vosk-model-ru", providers=providers).with_timestamps()

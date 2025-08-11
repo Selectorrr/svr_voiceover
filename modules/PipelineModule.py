@@ -85,19 +85,23 @@ class PipelineModule:
         for _, count in mapping:
             parts = []
             for i in range(count):
-                wave = all_waves[wave_idx]
+                wave_22050 = all_waves[wave_idx]
                 input = split_inputs[wave_idx]
                 wave_idx += 1
-                if wave is None or not self.audio.validate(wave, OUTPUT_SR, input.text):
+                if wave_22050 is None:
                     parts = []
                     break
-                if len(wave) >= 2 * FADE_LEN:
+                is_valid, wave_22050 = self.audio.validate_and_fix(wave_22050, OUTPUT_SR, input.text)
+                if not is_valid:
+                    parts = []
+                    break
+                if len(wave_22050) >= 2 * FADE_LEN:
                     if i > 0:
-                        wave[:FADE_LEN] *= numpy.linspace(0, 1, FADE_LEN)
+                        wave_22050[:FADE_LEN] *= numpy.linspace(0, 1, FADE_LEN)
                     if i < count - 1:
-                        wave[-FADE_LEN:] *= numpy.linspace(1, 0, FADE_LEN)
+                        wave_22050[-FADE_LEN:] *= numpy.linspace(1, 0, FADE_LEN)
 
-                parts.append(wave)
+                parts.append(wave_22050)
 
             merged.append(numpy.concatenate(parts) if parts else None)
 
