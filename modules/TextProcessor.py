@@ -1,5 +1,6 @@
 import difflib
 import re
+from typing import List
 
 
 class TextProcessor:
@@ -33,20 +34,22 @@ class TextProcessor:
             print('sound word ' + sentence)
         return result
 
-    def split_text(self, text, max_text_len):
-        phrases = re.split(r'(?<=[.!?…])\s+', text)
-        chunks, current = [], ""
-        for phrase in phrases:
-            if len(current) + len(phrase) + 1 <= max_text_len:
-                current += (" " if current else "") + phrase
+    def split_text(self, text: str, max_text_len: int, splitter: str = r'(?<=[.!?…])\s+') -> List[str]:
+        phrases = re.split(splitter, text.strip()) if text else []
+        chunks, cur = [], ""
+        for ph in phrases:
+            if not ph:
+                continue
+            add = ((" " if cur else "") + ph)
+            if len(cur) + len(add) <= max_text_len:
+                cur += add
             else:
-                if current:
-                    chunks.append(current)
-                current = phrase
-        if current:
-            chunks.append(current)
+                if cur:
+                    chunks.append(cur)
+                cur = ph
+        if cur:
+            chunks.append(cur)
         return chunks
-
 
 def normalize(text):
     text = text.lower().replace('ё', 'е').replace('й', 'и')

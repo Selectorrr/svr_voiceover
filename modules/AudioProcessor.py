@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import List, Optional, Callable, Tuple
 
 import librosa
 import numpy
@@ -18,7 +19,6 @@ from pydub.silence import detect_silence
 
 from modules.TextProcessor import similarity
 
-MAX_PROSODY_LEN = 20
 OUTPUT_SR = 22_050
 
 class AudioProcessor:
@@ -191,10 +191,10 @@ class AudioProcessor:
         mos = float(outs[0].reshape(-1).mean())
         return mos
 
-    def validate_and_fix(self, wave_22050, sr, text_ref, threshold=0.75):
+    def validate(self, wave_22050, sr, text_ref, threshold=0.75):
         if bool(re.search(r'[A-Za-z0-9]', text_ref)):
             # все равно распознать такой не сможем, редкая ситуация потому считаем валидным
-            return True, wave_22050
+            return True
         from modules.PipelineModule import factory
 
         segment = self._to_segment(wave_22050, sr)
@@ -203,9 +203,8 @@ class AudioProcessor:
         wave_16k = self.rtrim_audio(wave_16k, 16_000, top_db=40)
 
         asr_result = factory.asr.recognize(audio=wave_16k)
-        wave_22050 = self.trim_by_vad(wave_22050, OUTPUT_SR, asr_result, text_ref)
         sim = similarity(text_ref, asr_result.text)
-        return sim >= threshold, wave_22050
+        return sim >= threshold
 
     @staticmethod
     def _to_segment(y, sr=24000):
@@ -350,7 +349,7 @@ class AudioProcessor:
         # обрезаем тишину справа
         wave = self.rtrim_audio(wave, sr, top_db=top_db)
         # органичиваем максимальный размер
-        wave = wave[:MAX_PROSODY_LEN * sr]
+        # wave = wave[:MAX_PROSODY_LEN * sr]
         keep = int(0.1 * sr)  # 100 мс
         # убираем последние 100 мс тк добавим ниже тишины
         wave = wave[:-keep]
@@ -361,6 +360,69 @@ class AudioProcessor:
         # дополняем до 1 сек или 100 мс тишины
         wave = self.pad_with_silent(wave, sr)
         return wave
+
+    def split_audio(self, prosody_wave_24k: np.ndarray,
+        text_chunks: List[str],
+        *,
+        sr: int = 24000,
+        fade_ms: int = 30,
+        pad_right_ms: int = 100,
+        char_counter: Optional[Callable[[str], int]] = None,
+        ) -> List[Tuple[str, np.ndarray]]:
+        if not text_chunks:
+            return []
+
+        if char_counter is None:
+            def char_counter(s: str) -> int:
+                return max(0, len(re.sub(r"\s+", "", s)))
+
+        y = np.asarray(prosody_wave_24k, dtype=np.float32)
+        total_samples = int(y.shape[0])
+        if total_samples <= 0:
+            return []
+
+        duration_sec = total_samples / float(sr)
+        weights = np.asarray([char_counter(c) for c in text_chunks], dtype=np.float64)
+        if weights.sum() <= 0:
+            weights[:] = 1.0
+
+        # длительности чанков и границы в сэмплах
+        durations_sec = (weights / weights.sum()) * duration_sec
+        cum_times = np.cumsum(durations_sec)
+        cum_times[-1] = duration_sec
+        bounds = np.rint(cum_times * sr).astype(np.int64)
+        starts = np.concatenate(([0], bounds[:-1]))
+        ends = bounds
+        ends[-1] = total_samples
+
+        # монотонность и минимум 1 сэмпл
+        for i in range(len(starts)):
+            if ends[i] <= starts[i]:
+                ends[i] = min(total_samples, starts[i] + 1)
+            if i + 1 < len(starts):
+                starts[i + 1] = max(starts[i + 1], ends[i])
+
+        right_sil = AudioSegment.silent(duration=pad_right_ms, frame_rate=sr)
+
+        out: List[Tuple[str, np.ndarray]] = []
+        for chunk_text, s, e in zip(text_chunks, starts, ends):
+            seg_np = y[s:e]
+            seg = self._to_segment(seg_np, sr=sr)
+
+            seg_ms = int(1000 * (len(seg_np) / sr))
+            eff_fade = max(0, min(fade_ms, seg_ms // 2))
+            if eff_fade > 0:
+                seg = seg.fade_in(eff_fade).fade_out(eff_fade)
+
+            seg = seg + right_sil
+            seg_nd, _ = self._to_ndarray(seg)
+            seg_nd = seg_nd.astype(np.float32, copy=False)
+            out.append((chunk_text, seg_nd))
+
+        return out
+
+
+
 
     @staticmethod
     def is_has_sound(seg, silence_thresh=-40, min_silence_len=100):

@@ -21,8 +21,14 @@ class ModelFactory:
 
     @cached_property
     def svr_tts(self):
-        return SVR_TTS(self.config['api_key'], providers=self.config["providers"],
-                       provider_options=self._get_provider_opts())
+        import onnxruntime as ort
+        result = SVR_TTS(self.config['api_key'], providers=self.config["providers"],
+                      provider_options=self._get_provider_opts())
+        print("providers:", ort.get_available_providers())  # должно быть 'CUDAExecutionProvider'
+        sess = result.base_model
+        print("active:", sess.get_providers())
+        return result
+
 
     @cached_property
     def mos(self):

@@ -23,7 +23,7 @@ if __name__ == '__main__':
     parser.add_argument('--ext', type=str, default="wav", help='Формат результирующего ауидо')
     parser.add_argument('--tone_sample_len', type=int, default=7500, help='Длина сэмпла голоса')
     parser.add_argument('--api_key', type=str, help='Ваш ключ доступа к api', required=True)
-    parser.add_argument('--batch_size', type=int, default=20, help='Размер батча')
+    parser.add_argument('--batch_size', type=int, default=None, help='Размер батча')
     parser.add_argument('--n_jobs', type=int, default=None, help='Количество воркеров')
     parser.add_argument('--csv_delimiter', type=str, default=',', help='Разделитель, использующийся в csv.')
     parser.add_argument('--is_strict_len', action='store_true',
@@ -43,6 +43,7 @@ if __name__ == '__main__':
 
     if args.n_jobs is None:
         args.n_jobs = detect_gpu_count()
-
+    if args.batch_size is None:
+        args.batch_size = args.n_jobs * 2
     config = vars(args)
     PipelineModule(config).run()

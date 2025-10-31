@@ -6,3 +6,6 @@ pyloudnorm
 soundfile
 tqdm
 appdirs
+pqdm
+GPUtil
+onnx_asr

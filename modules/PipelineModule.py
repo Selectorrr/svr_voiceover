@@ -36,29 +36,20 @@ class PipelineModule:
         self.speaker = SpeakerProcessor(self.audio)
         self.config = config
 
-    def synthesize_batch_with_split(self, inputs, max_text_len=200):
+    def synthesize_batch_with_split(self, inputs, max_text_len=125):
         split_inputs = []
         mapping = []
 
         for idx, inp in enumerate(inputs):
-            if len(inp.text) <= max_text_len:
-                split_inputs.append(SynthesisInput(
-                    text=inp.text,
-                    stress=inp.stress,
-                    timbre_wave_24k=inp.timbre_wave_24k,
-                    prosody_wave_24k=inp.prosody_wave_24k
-                ))
-                mapping.append((idx, 1))
-                continue
-
             chunks = self.text.split_text(inp.text, max_text_len)
+            chunks = self.audio.split_audio(inp.prosody_wave_24k, chunks)
 
-            for chunk in chunks:
+            for chunk_text, chunk_prosody in chunks:
                 split_inputs.append(SynthesisInput(
-                    text=chunk,
+                    text=chunk_text,
                     stress=inp.stress,
                     timbre_wave_24k=inp.timbre_wave_24k,
-                    prosody_wave_24k=inp.prosody_wave_24k
+                    prosody_wave_24k=self.audio.prepare_prosody(chunk_prosody, 24000)
                 ))
             mapping.append((idx, len(chunks)))
 
@@ -84,15 +75,13 @@ class PipelineModule:
         wave_idx = 0
         for _, count in mapping:
             parts = []
+            texts = []
             for i in range(count):
                 wave_22050 = all_waves[wave_idx]
                 input = split_inputs[wave_idx]
+                texts.append(input.text)
                 wave_idx += 1
                 if wave_22050 is None:
-                    parts = []
-                    break
-                is_valid, wave_22050 = self.audio.validate_and_fix(wave_22050, OUTPUT_SR, input.text)
-                if not is_valid:
                     parts = []
                     break
                 if len(wave_22050) >= 2 * FADE_LEN:
@@ -103,7 +92,10 @@ class PipelineModule:
 
                 parts.append(wave_22050)
 
-            merged.append(numpy.concatenate(parts) if parts else None)
+            full_wave_22050 = numpy.concatenate(parts) if parts else None
+            full_text = " ".join(texts) if texts else None
+            is_valid = self.audio.validate(full_wave_22050, OUTPUT_SR, full_text)
+            merged.append(full_wave_22050 if is_valid else None)
 
         return merged
 
@@ -156,8 +148,7 @@ class PipelineModule:
             # берем наш текст и сэмплы тембра и просодии и упаковываем в задачи для синтеза
             inputs.append(SynthesisInput(text=vo_item['text'], stress=not vo_item['is_accented'],
                                          timbre_wave_24k=vo_item['style_wave_24k'],
-                                         prosody_wave_24k=self.audio.prepare_prosody(vo_item['raw_wave_24k'],
-                                                                                     24000)))
+                                         prosody_wave_24k=vo_item['raw_wave_24k']))
         # отправляем в svr tts
         # noinspection PyUnresolvedReferences
         waves = self.synthesize_batch_with_split(inputs)
