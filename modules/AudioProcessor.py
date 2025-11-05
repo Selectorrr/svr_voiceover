@@ -148,6 +148,8 @@ class AudioProcessor:
             new_seg = self._to_segment(wave_24k, 24_000)
             if voice_path.exists():
                 segment = AudioSegment.from_wav(voice_path)
+                if segment.frame_rate != 24_000:
+                    segment = segment.set_frame_rate(24_000)
                 if len(segment) >= self.tone_sample_len:
                     return self._to_ndarray(segment)[0]
                 if mos >= mos_good:

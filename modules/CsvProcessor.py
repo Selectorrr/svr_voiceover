@@ -87,7 +87,7 @@ class CsvProcessor:
         # Читаем и обрабатываем предыдущие версии
         for file in previous_versions:
             with open(file, mode='r', encoding='utf-8-sig', newline='') as csvfile:
-                reader = csv.DictReader(csvfile)
+                reader = csv.DictReader(csvfile, delimiter=self.csv_delimiter)
                 fieldnames = reader.fieldnames
 
                 # Проверяем наличие столбца 'audio'

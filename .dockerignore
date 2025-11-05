@@ -5,3 +5,5 @@ Dockerfile
 .cache
 example
 .nv
+*.wav
+Dockerfile_test

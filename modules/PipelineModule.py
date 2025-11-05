@@ -1,3 +1,4 @@
+import traceback
 from multiprocessing import get_context
 from pathlib import Path
 
@@ -36,29 +37,13 @@ class PipelineModule:
         self.speaker = SpeakerProcessor(self.audio)
         self.config = config
 
-    def synthesize_batch_with_split(self, inputs, max_text_len=125):
-        split_inputs = []
-        mapping = []
-
-        for idx, inp in enumerate(inputs):
-            chunks = self.text.split_text(inp.text, max_text_len)
-            chunks = self.audio.split_audio(inp.prosody_wave_24k, chunks)
-
-            for chunk_text, chunk_prosody in chunks:
-                split_inputs.append(SynthesisInput(
-                    text=chunk_text,
-                    stress=inp.stress,
-                    timbre_wave_24k=inp.timbre_wave_24k,
-                    prosody_wave_24k=self.audio.prepare_prosody(chunk_prosody, 24000)
-                ))
-            mapping.append((idx, len(chunks)))
-
+    def synthesize_batch_with_split(self, inputs):
         job_n = ModelFactory.get_job_n()
 
         # noinspection PyUnresolvedReferences
         try:
-            all_waves = factory.svr_tts.synthesize_batch(
-                split_inputs,
+            all_waves = factory.svr_tts.synthesize(
+                inputs,
                 tqdm_kwargs={
                     'leave': False,
                     'smoothing': 0,
@@ -68,36 +53,25 @@ class PipelineModule:
                 }
             )
         except Exception as e:
-            print(e)
-            all_waves = [None] * len(split_inputs)
+            traceback.print_exc()
+            all_waves = [None] * len(inputs)
 
-        merged = []
-        wave_idx = 0
-        for _, count in mapping:
-            parts = []
-            texts = []
-            for i in range(count):
-                wave_22050 = all_waves[wave_idx]
-                input = split_inputs[wave_idx]
-                texts.append(input.text)
-                wave_idx += 1
-                if wave_22050 is None:
-                    parts = []
-                    break
-                if len(wave_22050) >= 2 * FADE_LEN:
-                    if i > 0:
-                        wave_22050[:FADE_LEN] *= numpy.linspace(0, 1, FADE_LEN)
-                    if i < count - 1:
-                        wave_22050[-FADE_LEN:] *= numpy.linspace(1, 0, FADE_LEN)
+        result = []
 
-                parts.append(wave_22050)
+        for i, full_wave_22050 in enumerate(all_waves):
+            input = inputs[i]
 
-            full_wave_22050 = numpy.concatenate(parts) if parts else None
-            full_text = " ".join(texts) if texts else None
-            is_valid = self.audio.validate(full_wave_22050, OUTPUT_SR, full_text)
-            merged.append(full_wave_22050 if is_valid else None)
+            is_valid = None
 
-        return merged
+            if full_wave_22050 is not None:
+                try:
+                    is_valid = self.audio.validate(full_wave_22050, OUTPUT_SR, input.text)
+                except Exception:
+                    traceback.print_exc()
+
+            result.append(full_wave_22050 if is_valid else None)
+
+        return result
 
     def _retry_and_select_waves(self, inputs, waves, vo_items):
         """
