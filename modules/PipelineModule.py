@@ -50,7 +50,8 @@ class PipelineModule:
                     'position': job_n + 1,
                     'postfix': f"job_n {job_n}",
                     'dynamic_ncols': True
-                }
+                },
+                rtrim_top_db=15
             )
         except Exception as e:
             traceback.print_exc()
