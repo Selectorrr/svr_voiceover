@@ -19,15 +19,11 @@ class ModelFactory:
     def __init__(self, config):
         self.config = config
 
-    @cached_property
+    @property
     def svr_tts(self):
-        import onnxruntime as ort
         result = SVR_TTS(self.config['api_key'], providers=self.config["providers"],
                       provider_options=self._get_provider_opts(),
-                      session_options=self._get_session_opts())
-        print("providers:", ort.get_available_providers())  # должно быть 'CUDAExecutionProvider'
-        sess = result.base_model
-        print("active:", sess.get_providers())
+                      session_options=self._get_session_opts(), user_models_dir=self.config['user_models_dir'])
         return result
 
 
@@ -52,7 +48,7 @@ class ModelFactory:
             if provider == "CUDAExecutionProvider":
                 provider_options += [{
                     'device_id': self._get_device_id(),
-                    'gpu_mem_limit': 8 * 1024 * 1024 * 1024,
+                    # 'gpu_mem_limit': 8 * 1024 * 1024 * 1024,
                     'arena_extend_strategy': 'kNextPowerOfTwo',
                     'cudnn_conv_algo_search': 'EXHAUSTIVE',
                     'sdpa_kernel': '2',

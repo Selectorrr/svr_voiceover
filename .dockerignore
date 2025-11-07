@@ -7,3 +7,4 @@ example
 .nv
 *.wav
 Dockerfile_test
+tmp

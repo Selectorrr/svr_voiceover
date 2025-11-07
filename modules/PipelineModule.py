@@ -37,12 +37,12 @@ class PipelineModule:
         self.speaker = SpeakerProcessor(self.audio)
         self.config = config
 
-    def synthesize_batch_with_split(self, inputs):
+    def synthesize_batch_with_split(self, svr_tts, inputs):
         job_n = ModelFactory.get_job_n()
 
         # noinspection PyUnresolvedReferences
         try:
-            all_waves = factory.svr_tts.synthesize(
+            all_waves = svr_tts.synthesize(
                 inputs,
                 tqdm_kwargs={
                     'leave': False,
@@ -74,7 +74,7 @@ class PipelineModule:
 
         return result
 
-    def _retry_and_select_waves(self, inputs, waves, vo_items):
+    def _retry_and_select_waves(self, svr_tts, inputs, waves, vo_items):
         """
         Для тех волн, длина которых сильно меньше prosody, выполняем повторный синтез
         и сразу выбираем между оригиналом и повторной попыткой наиболее близкую к целевой длине.
@@ -97,7 +97,7 @@ class PipelineModule:
         retry_map = {}
         if short_idxs:
             retry_inputs = [inputs[i] for i in short_idxs]
-            retry_results = self.synthesize_batch_with_split(retry_inputs)
+            retry_results = self.synthesize_batch_with_split(svr_tts, retry_inputs)
             retry_map = {short_idxs[i]: retry_results[i] for i in range(len(short_idxs))}
 
         # выбираем для каждой волны лучшую версию формируем итоговый список
@@ -125,10 +125,11 @@ class PipelineModule:
                                          timbre_wave_24k=vo_item['style_wave_24k'],
                                          prosody_wave_24k=vo_item['raw_wave_24k']))
         # отправляем в svr tts
+        svr_tts = factory.svr_tts
         # noinspection PyUnresolvedReferences
-        waves = self.synthesize_batch_with_split(inputs)
+        waves = self.synthesize_batch_with_split(svr_tts, inputs)
         # повторный синтез и выбор волны
-        waves = self._retry_and_select_waves(inputs, waves, vo_items)
+        waves = self._retry_and_select_waves(svr_tts, inputs, waves, vo_items)
 
         results = []
         for idx, wave in enumerate(waves):
