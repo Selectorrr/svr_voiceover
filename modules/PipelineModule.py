@@ -37,12 +37,12 @@ class PipelineModule:
         self.speaker = SpeakerProcessor(self.audio)
         self.config = config
 
-    def synthesize_batch_with_split(self, svr_tts, inputs):
+    def synthesize_batch_with_split(self, inputs):
         job_n = ModelFactory.get_job_n()
 
         # noinspection PyUnresolvedReferences
         try:
-            all_waves = svr_tts.synthesize(
+            all_waves = factory.svr_tts.synthesize(
                 inputs,
                 tqdm_kwargs={
                     'leave': False,
@@ -74,48 +74,7 @@ class PipelineModule:
 
         return result
 
-    def _retry_and_select_waves(self, svr_tts, inputs, waves, vo_items):
-        """
-        Для тех волн, длина которых сильно меньше prosody, выполняем повторный синтез
-        и сразу выбираем между оригиналом и повторной попыткой наиболее близкую к целевой длине.
-        Возвращает словарь: индекс -> выбранная волна для дальнейшего использования.
-        """
-        # вычисляем индексы коротких волн
-        short_idxs = []
-        for idx, wave in enumerate(waves):
-            if wave is None:
-                continue
-            # длина сгенерированной волны в секундах
-            wave_length = self.audio.trimmed_audio_len(wave, OUTPUT_SR)
-            # целевая длина (просодия) в секундах
-            prosody_length = self.audio.trimmed_audio_len(vo_items[idx]['raw_wave'], vo_items[idx]['raw_sr'])
-            # помечаем для повторного синтеза, если слишком короткая
-            if wave_length < prosody_length * self.config['min_len_deviation']:
-                short_idxs.append(idx)
 
-        # повторный синтез для коротких
-        retry_map = {}
-        if short_idxs:
-            retry_inputs = [inputs[i] for i in short_idxs]
-            retry_results = self.synthesize_batch_with_split(svr_tts, retry_inputs)
-            retry_map = {short_idxs[i]: retry_results[i] for i in range(len(short_idxs))}
-
-        # выбираем для каждой волны лучшую версию формируем итоговый список
-        chosen = []
-        for idx, orig_wave in enumerate(waves):
-            if orig_wave is None:
-                chosen.append(None)
-                continue
-            best_wave = orig_wave
-            if idx in retry_map and retry_map[idx] is not None:
-                second_wave = retry_map[idx]
-                len1 = len(orig_wave) / OUTPUT_SR
-                len2 = len(second_wave) / OUTPUT_SR
-                target = len(vo_items[idx]['raw_wave']) / vo_items[idx]['raw_sr']
-                if abs(len2 - target) < abs(len1 - target):
-                    best_wave = second_wave
-            chosen.append(best_wave)
-        return chosen
 
     def _efficient_audio_generation(self, vo_items):
         inputs = []
@@ -125,11 +84,8 @@ class PipelineModule:
                                          timbre_wave_24k=vo_item['style_wave_24k'],
                                          prosody_wave_24k=vo_item['raw_wave_24k']))
         # отправляем в svr tts
-        svr_tts = factory.svr_tts
         # noinspection PyUnresolvedReferences
-        waves = self.synthesize_batch_with_split(svr_tts, inputs)
-        # повторный синтез и выбор волны
-        waves = self._retry_and_select_waves(svr_tts, inputs, waves, vo_items)
+        waves = self.synthesize_batch_with_split(inputs)
 
         results = []
         for idx, wave in enumerate(waves):

@@ -27,8 +27,8 @@ class AudioProcessor:
         self.sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
         self.is_respect_mos = config['is_respect_mos']
         self.is_use_voice_len = config['is_use_voice_len']
-
-        pass
+        self.dur_norm_low = config['dur_norm_low'] - config['dur_norm_thr']
+        self.dur_norm_high = config['dur_norm_high'] + config['dur_norm_thr']
 
     def _read_vg_in_memory(self, wem_file_path):
         # Создаем временный файл
@@ -197,6 +197,8 @@ class AudioProcessor:
         if bool(re.search(r'[A-Za-z0-9]', text_ref)):
             # все равно распознать такой не сможем, редкая ситуация потому считаем валидным
             return True
+        if not self._validate_len(wave_22050, sr, text_ref):
+            return False
         from modules.PipelineModule import factory
 
         segment = self._to_segment(wave_22050, sr)
@@ -207,6 +209,21 @@ class AudioProcessor:
         asr_result = factory.asr.recognize(audio=wave_16k)
         sim = similarity(text_ref, asr_result.text)
         return sim >= threshold
+
+    def _validate_len(self, wave, sr, text_ref) -> bool:
+        if wave is None or sr <= 0 or not text_ref:
+            return False
+
+        sec = len(wave) / float(sr)
+        if sec <= 0:
+            return False
+
+        n_chars = len(text_ref)
+        if n_chars <= 0:
+            return False
+
+        cps = n_chars / sec
+        return self.dur_norm_low <= cps <= self.dur_norm_high
 
     @staticmethod
     def _to_segment(y, sr=24000):

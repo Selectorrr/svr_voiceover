@@ -19,7 +19,8 @@ config = {
     'is_respect_mos': False,
     'is_strict_len': True,
     'is_use_voice_len': True,
-    'providers': get_def_providers()
+    'providers': get_def_providers(),
+    'user_models_dir': ''
 }
 text_module = TextProcessor()
 csv_module = CsvProcessor(config, text_module)
@@ -131,6 +132,7 @@ def main():
                            prosody_wave_24k=audio_module.prepare_prosody(raw_wave_norm, raw_sr))
 
             sample_path = Path(f"/workspace/SynthVoiceRu/workspace/voices/{speaker}/{voice_num}/sample.wav")
+            sample_path.parent.mkdir(parents=True, exist_ok=True)
             wave = infer(input)
             soundfile.write(str(sample_path), wave, 22_050)
 
