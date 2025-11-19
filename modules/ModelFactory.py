@@ -73,17 +73,3 @@ class ModelFactory:
         os.makedirs(cache_dir, exist_ok=True)
         return cache_dir
 
-    def _detect_providers(self):
-        providers = []
-        try:
-            # вернёт список GPU-объектов, даже если nvidia-smi не в PATH
-            gpus = GPUtil.getGPUs()
-            for gpu in gpus:
-                # gpu.id — порядковый номер устройства
-                providers.append(f"CUDAExecutionProvider:{gpu.id}")
-        except Exception:
-            # если что-то пойдёт не так — просто не добавим CUDA
-            pass
-
-        providers.append("CPUExecutionProvider")
-        return providers

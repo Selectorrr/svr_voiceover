@@ -29,10 +29,10 @@ class CsvProcessor:
     def _filter_by_exists(self, records, all_records):
 
         resources = set(
-            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./'),
+            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./').lower(),
                 glob('**/*.*', recursive=True, root_dir='workspace/resources')))
         dub = set(
-            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./'),
+            map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./').lower(),
                 glob('**/*.*', recursive=True, root_dir='workspace/dub')))
 
         todo = set(resources) - set(dub)
@@ -40,21 +40,21 @@ class CsvProcessor:
         records_with_text = [row for row in records if re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0])]
         print(f"Найдено {len(records_with_text)} записей содержащих руский текст из {len(records)}")
         records_with_files = [row for row in records_with_text if
-                                   str(Path(row['audio']).with_suffix('')) in resources]
+                                   str(Path(row['audio']).with_suffix('')).lower() in resources]
         if len(records_with_files) != len(records_with_text):
             print('Внимание в csv есть файлы которых нет а рабочей директории')
-            nf = [r for r in records if str(Path(r['audio']).with_suffix('')) not in resources]
+            nf = [r for r in records if str(Path(r['audio']).with_suffix('')).lower() not in resources]
             sel = nf[:5] + [r for r in nf[-5:] if r not in nf[:5]]
 
             print(f"Всего не найдено: {len(nf)}")
             for i, r in enumerate(sel, 1):
                 print(f"Пример: {i}) {r['audio']}")
         todo_records_with_files = [row for row in records_with_text if
-                                   str(Path(row['audio']).with_suffix('')) in todo]
+                                   str(Path(row['audio']).with_suffix('')).lower() in todo]
         records_with_text = todo_records_with_files
         all_records = [row for row in all_records if
                        re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0]) and str(
-                           Path(row['audio']).with_suffix('')) in resources]
+                           Path(row['audio']).with_suffix('')).lower()in resources]
         records_with_text = sorted(records_with_text, key=lambda i: i['audio'])
         return records_with_text, all_records
 

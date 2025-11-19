@@ -2,7 +2,6 @@ import traceback
 from multiprocessing import get_context
 from pathlib import Path
 
-import librosa
 import numpy
 import onnxruntime
 import soundfile
@@ -93,22 +92,7 @@ class PipelineModule:
             if wave is None:
                 continue
             # собираем результаты и одновременно сопоставляем с исходной громкостью и файлом
-            # 22050 это фрейм рейт нейросети.
             vo_item = vo_items[idx]
-
-            # если длина аудио строго должна совпадать с оригиналом
-            if self.config['is_strict_len']:
-                if self.config['is_use_voice_len']:
-                    raw_len = self.audio.voice_len(vo_item['raw_wave_24k'], INPUT_SR)
-                else:
-                    raw_len = self.audio.audio_len(vo_item['raw_wave'], vo_item['raw_sr'])
-                # уберем тишину тк это безболезненно
-                wave, _ = librosa.effects.trim(wave, top_db=40)
-                wave_len = len(wave) / OUTPUT_SR
-                rate = wave_len / raw_len
-                if rate > 1:
-                    # ускорим, но не сильнее чем на 50 процентов
-                    wave = self.audio.speedup(wave, OUTPUT_SR, rate, raw_len)
             results.append((wave, OUTPUT_SR, vo_item['path'], vo_item['meta'], vo_item['raw_wave'], vo_item['raw_sr'],
                             vo_item['raw_wave_24k']))
         return results
@@ -162,22 +146,11 @@ class PipelineModule:
             # Восстановим характеристики оригинального аудио
             dub, sr = self.audio.restore_meta(dub, sr, i_meta)
 
-            if self.config['is_strict_len']:
-                dub = self.audio.align_by_samples(dub, sr, i_raw_wave_24k, INPUT_SR)
-
             # Сохраняем дубляж
             dub_file = Path(f"workspace/dub/{i_path}")
             dub_file.parent.mkdir(parents=True, exist_ok=True)
             dub_file = Path(str(dub_file)).with_suffix(f".{self.config['ext']}")
             soundfile.write(dub_file, dub, sr)
-
-            # Сведем закадр
-            vo, vo_sr = self.audio.mixing(dub, sr, i_raw_wave, i_raw_sr)
-            # Сохраняем закадр
-            vo_file = Path(f"workspace/vo/{i_path}")
-            vo_file.parent.mkdir(parents=True, exist_ok=True)
-            vo_file = Path(str(vo_file)).with_suffix(f".{self.config['ext']}")
-            soundfile.write(vo_file, vo, vo_sr)
 
     def run(self):
         # Найдем все строки что нужно озвучить с учетом разных версий файлов

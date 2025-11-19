@@ -9,3 +9,4 @@ appdirs
 pqdm
 GPUtil
 onnx_asr
+audalign

@@ -5,7 +5,6 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import List, Optional, Callable, Tuple
 
 import librosa
 import numpy
@@ -13,7 +12,6 @@ import numpy as np
 import pyloudnorm
 import soundfile
 from filelock import FileLock
-from onnx_asr.asr import TimestampedResult
 from pydub import AudioSegment
 from pydub.silence import detect_silence
 
@@ -21,14 +19,14 @@ from modules.TextProcessor import similarity
 
 OUTPUT_SR = 22_050
 
+
 class AudioProcessor:
     def __init__(self, config):
         self.tone_sample_len = config['tone_sample_len']
         self.sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
         self.is_respect_mos = config['is_respect_mos']
-        self.is_use_voice_len = config['is_use_voice_len']
-        self.dur_norm_low = config['dur_norm_low'] - config['dur_norm_thr']
-        self.dur_norm_high = config['dur_norm_high'] + config['dur_norm_thr']
+        self.dur_norm_low = config['dur_norm_low'] - config['dur_norm_thr_low']
+        self.dur_norm_high = config['dur_norm_high'] + config['dur_norm_thr_high']
 
     def _read_vg_in_memory(self, wem_file_path):
         # Создаем временный файл
@@ -90,7 +88,7 @@ class AudioProcessor:
             wave, sr = soundfile.read(path)
         elif suffix in {'.m4a', '.mp4', '.wma', '.aac'}:
             # Если формат поддерживается pydub то попробуем прочитать им
-            wave, sr = self._to_ndarray(AudioSegment.from_file(path, suffix.lstrip('.'), parameters=None))
+            wave, sr = self.to_ndarray(AudioSegment.from_file(path, suffix.lstrip('.'), parameters=None))
         else:
             try:
                 # Что-ж видимо это экзотический формат или игровой без конвертации файл не прочитать, пробуем vgmstream
@@ -98,7 +96,7 @@ class AudioProcessor:
             except Exception as e:
                 raise ValueError(f"Unsupported file: {e}")
         raw_wave, raw_sr = wave, sr
-        segment = self._to_segment(wave, sr)
+        segment = self.to_segment(wave, sr)
         if not self.is_has_sound(segment):
             raise ValueError(f"No sound: {path}")
 
@@ -117,7 +115,7 @@ class AudioProcessor:
         segment = self._normalize_audio_lufs(segment)
         if segment.frame_rate != 24_000:
             segment = segment.set_frame_rate(24_000)
-        wave, sr = self._to_ndarray(segment)
+        wave, sr = self.to_ndarray(segment)
         return wave, meta, raw_wave, raw_sr
 
     def build_speaker_sample(self, voice_path: Path, wave_24k, mos_good=3.5, mos_bad=2):
@@ -128,45 +126,44 @@ class AudioProcessor:
 
         # если аудио с эффектами или сильно эмоциональное
         if mos < mos_bad:
-            segment = self._to_segment(wave_24k, 24_000)
+            segment = self.to_segment(wave_24k, 24_000)
             segment = self._fix_len(segment)
             # вернем как есть без подмены на качественный
-            return self._to_ndarray(segment)[0]
+            return self.to_ndarray(segment)[0]
 
         lock_path = str(voice_path) + ".lock"
+        lock = FileLock(lock_path, timeout=10)
 
-        if os.path.exists(lock_path):
-            age = time.time() - os.path.getmtime(lock_path)
-            if age > 10:
+        try:
+            with lock:
+                new_seg = self.to_segment(wave_24k, 24_000)
+                if voice_path.exists():
+                    segment = AudioSegment.from_wav(voice_path)
+                    if segment.frame_rate != 24_000:
+                        segment = segment.set_frame_rate(24_000)
+                    if len(segment) >= self.tone_sample_len:
+                        return self.to_ndarray(segment)[0]
+                    if mos >= mos_good:
+                        end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
+                        if not self._is_similar(end_slice, new_seg):
+                            segment += new_seg
+                else:
+                    segment = new_seg
+
+                segment = self._fix_len(segment)
+
+                if mos >= mos_good:
+                    voice_path.parent.mkdir(parents=True, exist_ok=True)
+                    tmp_path = voice_path.with_suffix(".wav.tmp")
+                    segment.export(tmp_path, format="wav")
+                    tmp_path.replace(voice_path)
+                return self.to_ndarray(segment)[0]
+        finally:
+            if os.path.exists(lock_path):
                 try:
                     os.remove(lock_path)
                 except OSError:
                     pass
-
-        lock = FileLock(lock_path, timeout=10)
-        with lock:
-            new_seg = self._to_segment(wave_24k, 24_000)
-            if voice_path.exists():
-                segment = AudioSegment.from_wav(voice_path)
-                if segment.frame_rate != 24_000:
-                    segment = segment.set_frame_rate(24_000)
-                if len(segment) >= self.tone_sample_len:
-                    return self._to_ndarray(segment)[0]
-                if mos >= mos_good:
-                    end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
-                    if not self._is_similar(end_slice, new_seg):
-                        segment += new_seg
-            else:
-                segment = new_seg
-
-            segment = self._fix_len(segment)
-
-            if mos >= mos_good:
-                voice_path.parent.mkdir(parents=True, exist_ok=True)
-                tmp_path = voice_path.with_suffix(".wav.tmp")
-                segment.export(tmp_path, format="wav")
-                tmp_path.replace(voice_path)  # atomic rename
-            return self._to_ndarray(segment)[0]
 
     def _fix_len(self, segment):
         while len(segment) < 1000:
@@ -184,9 +181,9 @@ class AudioProcessor:
 
     def calc_mos(self, wave, sr):
         if sr != 16_000:
-            segment = self._to_segment(wave, sr)
+            segment = self.to_segment(wave, sr)
             segment = segment.set_frame_rate(16_000)
-            wave, sr = self._to_ndarray(segment)
+            wave, sr = self.to_ndarray(segment)
         x = wave[numpy.newaxis, :].astype(numpy.float32)
         from modules.PipelineModule import factory
         outs = factory.mos.run(None, {"input_values": x})
@@ -201,9 +198,9 @@ class AudioProcessor:
             return False
         from modules.PipelineModule import factory
 
-        segment = self._to_segment(wave_22050, sr)
+        segment = self.to_segment(wave_22050, sr)
         segment = segment.set_frame_rate(16_000)
-        wave_16k, _ = self._to_ndarray(segment)
+        wave_16k, _ = self.to_ndarray(segment)
         wave_16k = self.rtrim_audio(wave_16k, 16_000, top_db=40)
 
         asr_result = factory.asr.recognize(audio=wave_16k)
@@ -226,14 +223,14 @@ class AudioProcessor:
         return self.dur_norm_low <= cps <= self.dur_norm_high
 
     @staticmethod
-    def _to_segment(y, sr=24000):
+    def to_segment(y, sr=24000):
         memory_buffer = io.BytesIO()
         soundfile.write(memory_buffer, y, samplerate=sr, format='WAV')
         memory_buffer.seek(0)
         return AudioSegment(memory_buffer)
 
     @staticmethod
-    def _to_ndarray(segment):
+    def to_ndarray(segment):
         memory_buffer = io.BytesIO()
         segment.export(memory_buffer, format='wav')
         memory_buffer.seek(0)
@@ -253,116 +250,22 @@ class AudioProcessor:
         y = y[:index[1]]
         return y
 
-    def voice_len(self, y, sr, lower_bound=1):
-        y = self.rtrim_audio(y, sr, lower_bound)
-        r_len = self.audio_len(y, sr)
-        return r_len
-
     def pad_with_silent(self, raw_wave, raw_sr):
         target_length = self.audio_len(raw_wave, raw_sr)
         silent_len = max(1 - target_length, 0.1) * 1000
-        raw_segment = self._to_segment(raw_wave, raw_sr) + AudioSegment.silent(duration=silent_len, frame_rate=raw_sr)
+        raw_segment = self.to_segment(raw_wave, raw_sr) + AudioSegment.silent(duration=silent_len, frame_rate=raw_sr)
 
-        raw_wave, raw_sr = self._to_ndarray(raw_segment)
+        raw_wave, raw_sr = self.to_ndarray(raw_segment)
         return raw_wave
 
-    def get_sound_center(self, signal, top_db=40):
-        if signal.ndim > 1:
-            mono = numpy.mean(signal, axis=tuple(range(1, signal.ndim)))
-        else:
-            mono = signal
-        _, idx = librosa.effects.trim(mono, top_db=top_db)
-        start, end = idx
-        return start
-
-    def align_by_samples(self, wave, wave_sr, raw_wave, raw_sr, top_db=40):
-        if wave_sr != raw_sr:
-            raw_wave, raw_sr = self._to_ndarray(self._to_segment(raw_wave, raw_sr).set_frame_rate(wave_sr))
-
-        orig_len = raw_wave.shape[0]
-        if self.is_use_voice_len:
-            target_len = int(self.voice_len(raw_wave, raw_sr) * raw_sr)
-        else:
-            target_len = orig_len
-
-        start_wave = self.get_sound_center(wave, top_db)
-        start_raw = self.get_sound_center(raw_wave, top_db)
-
-        desired_shift = start_raw - start_wave
-
-        max_left_shift = start_wave
-        max_right_shift = target_len - (wave.shape[0] - start_wave)
-
-        # Ограничиваем shift, чтобы полезный сигнал полностью влез
-        safe_shift = int(numpy.clip(desired_shift, -max_left_shift, max_right_shift))
-
-        # Применяем сдвиг
-        if safe_shift > 0:
-            pad = numpy.zeros((safe_shift,) + wave.shape[1:], dtype=wave.dtype)
-            wave = numpy.concatenate([pad, wave], axis=0)
-        elif safe_shift < 0:
-            wave = wave[-safe_shift:]
-
-        # Дополняем справа до нужной длины
-        if self.is_use_voice_len:
-            wave = self.pad_or_trim_to_len(target_len, wave)
-        # и в любом случае возвращаем длину orig_len
-        wave = self.pad_or_trim_to_len(orig_len, wave)
-        return wave
-
-    def pad_or_trim_to_len(self, target_len, wave):
-        if wave.shape[0] < target_len:
-            pad = numpy.zeros((target_len - wave.shape[0],) + wave.shape[1:], dtype=wave.dtype)
-            wave = numpy.concatenate([wave, pad], axis=0)
-        else:
-            wave = wave[:target_len]
-        return wave
-
     def restore_meta(self, wave, sr, meta):
-        segment = self._to_segment(wave, sr)
+        segment = self.to_segment(wave, sr)
         segment = segment.set_frame_rate(meta['frame_rate'])
         segment = segment.set_sample_width(meta['sample_width'])
         segment = segment.apply_gain(meta['dBFS'] - segment.dBFS)
         segment = segment.set_channels(meta['channels'])
-        wave, sr = self._to_ndarray(segment)
+        wave, sr = self.to_ndarray(segment)
         return wave, sr
-
-    def speedup(self, wave, sr, ratio, max_len, increment=0.05):
-        segment = self._to_segment(wave, sr)
-        ratio = min(2 - increment, ratio)
-        ratio += increment
-        while len(segment) > max_len * 1000:
-            memory_buffer = io.BytesIO()
-            # эксперементы показали что atempo дает наименьшие артефакты при ускорении
-            segment.export(memory_buffer, format='wav', parameters=["-af", f"atempo={ratio}"])
-            memory_buffer.seek(0)
-            wave, sr = soundfile.read(memory_buffer)
-            segment = self._to_segment(wave, sr)
-            ratio = 1 + increment
-
-        wave, sr = self._to_ndarray(segment)
-        return wave
-
-    def mixing(self, dub_wave, dub_sr, raw_wave, raw_sr):
-        dub_segment = self._to_segment(dub_wave, dub_sr)
-        resource_segment = self._to_segment(raw_wave, raw_sr)
-        raw_audio = resource_segment - 7
-        if raw_audio.frame_rate != dub_segment.frame_rate:
-            raw_audio = raw_audio.set_frame_rate(dub_segment.frame_rate)
-
-        # Выравнивание длительности аудио
-        max_duration = max(len(raw_audio), len(dub_segment))
-        raw_audio = raw_audio + AudioSegment.silent(duration=max_duration - len(raw_audio))
-        dub_segment = dub_segment + AudioSegment.silent(duration=max_duration - len(dub_segment))
-
-        # Смешивание
-        mixed_audio = raw_audio.overlay(dub_segment)
-        return self._to_ndarray(mixed_audio)
-
-    @staticmethod
-    def trimmed_audio_len(wave, sr, top_db=40):
-        raw_wave, _ = librosa.effects.trim(wave, top_db=top_db)
-        return len(raw_wave) / sr
 
     def prepare_prosody(self, wave, sr, top_db=40):
         # обрезаем тишину справа
@@ -380,69 +283,6 @@ class AudioProcessor:
         wave = self.pad_with_silent(wave, sr)
         return wave
 
-    def split_audio(self, prosody_wave_24k: np.ndarray,
-        text_chunks: List[str],
-        *,
-        sr: int = 24000,
-        fade_ms: int = 30,
-        pad_right_ms: int = 100,
-        char_counter: Optional[Callable[[str], int]] = None,
-        ) -> List[Tuple[str, np.ndarray]]:
-        if not text_chunks:
-            return []
-
-        if char_counter is None:
-            def char_counter(s: str) -> int:
-                return max(0, len(re.sub(r"\s+", "", s)))
-
-        y = np.asarray(prosody_wave_24k, dtype=np.float32)
-        total_samples = int(y.shape[0])
-        if total_samples <= 0:
-            return []
-
-        duration_sec = total_samples / float(sr)
-        weights = np.asarray([char_counter(c) for c in text_chunks], dtype=np.float64)
-        if weights.sum() <= 0:
-            weights[:] = 1.0
-
-        # длительности чанков и границы в сэмплах
-        durations_sec = (weights / weights.sum()) * duration_sec
-        cum_times = np.cumsum(durations_sec)
-        cum_times[-1] = duration_sec
-        bounds = np.rint(cum_times * sr).astype(np.int64)
-        starts = np.concatenate(([0], bounds[:-1]))
-        ends = bounds
-        ends[-1] = total_samples
-
-        # монотонность и минимум 1 сэмпл
-        for i in range(len(starts)):
-            if ends[i] <= starts[i]:
-                ends[i] = min(total_samples, starts[i] + 1)
-            if i + 1 < len(starts):
-                starts[i + 1] = max(starts[i + 1], ends[i])
-
-        right_sil = AudioSegment.silent(duration=pad_right_ms, frame_rate=sr)
-
-        out: List[Tuple[str, np.ndarray]] = []
-        for chunk_text, s, e in zip(text_chunks, starts, ends):
-            seg_np = y[s:e]
-            seg = self._to_segment(seg_np, sr=sr)
-
-            seg_ms = int(1000 * (len(seg_np) / sr))
-            eff_fade = max(0, min(fade_ms, seg_ms // 2))
-            if eff_fade > 0:
-                seg = seg.fade_in(eff_fade).fade_out(eff_fade)
-
-            seg = seg + right_sil
-            seg_nd, _ = self._to_ndarray(seg)
-            seg_nd = seg_nd.astype(np.float32, copy=False)
-            out.append((chunk_text, seg_nd))
-
-        return out
-
-
-
-
     @staticmethod
     def is_has_sound(seg, silence_thresh=-40, min_silence_len=100):
         silent_ranges = detect_silence(
@@ -452,33 +292,3 @@ class AudioProcessor:
         )
         total_silence = sum(end - start for start, end in silent_ranges)
         return total_silence < len(seg)
-
-    def trim_by_vad(self, wave_22050, sr, asr:TimestampedResult, ref_text, pad_ms=250, fade_ms=10, hallucination_len=200):
-        """
-        self.model — уже загружен (onnx_asr), распознаёт из numpy.
-        self.to_segment(np,sr) -> AudioSegment ; self.to_numpy(seg) -> (np,sr)
-        """
-        from modules.PipelineModule import factory
-        # ASR
-        last_end_ms = factory.asr.end_time(asr, ref_text)
-
-        if last_end_ms is None:
-            # кириллицы не нашли — просто вернем то что пришло
-            return wave_22050
-
-        seg = self._to_segment(wave_22050, sr)
-        dur_ms = len(seg)
-
-        # пад и клип
-        cut_ms = last_end_ms + pad_ms
-        if cut_ms >= dur_ms:
-            return wave_22050
-
-        # режем только если есть что отрезать (>200мс)
-        if dur_ms - cut_ms > hallucination_len:
-            out = seg[:cut_ms].fade_out(fade_ms)
-        else:
-            out = seg
-
-        trimmed_np, _ = self._to_ndarray(out)
-        return trimmed_np

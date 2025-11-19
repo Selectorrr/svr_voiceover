@@ -26,12 +26,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=32, help='Размер батча')
     parser.add_argument('--n_jobs', type=int, default=None, help='Количество воркеров')
     parser.add_argument('--csv_delimiter', type=str, default=',', help='Разделитель, использующийся в csv.')
-    parser.add_argument('--is_strict_len', action='store_true',
-                        help='Должна ли длина аудио строго совпадать с оригиналом')
-    parser.add_argument('--is_use_voice_len', action='store_true',
-                        help='Если строгая длина и is_use_voice_len=true то в качестве продолжительности будет '
-                             'учитываться конец речи в аудио, а не длина всего аудио')
-    parser.add_argument('--is_respect_mos', action='store_true',
+    parser.add_argument('--is_respect_mos', action='store_true', default=True,
                         help='Нужно ли учитывать качество звука для построения сэмпла голоса')
     parser.add_argument('--providers', nargs='+', default=get_def_providers(),
                         help='Список провайдеров для выполнения (ONNX runtime)')
@@ -41,7 +36,8 @@ if __name__ == '__main__':
                         help='Путь до кастомных моделей если есть')
     parser.add_argument('--dur_norm_low', type=float, default=5.0, help='Минимальный порог темпа речи')
     parser.add_argument('--dur_norm_high', type=float, default=16.0, help='Максимальный порог темпа речи')
-    parser.add_argument('--dur_norm_thr', type=float, default=1.0, help='Допустимое отклонение темпа речи от границ')
+    parser.add_argument('--dur_norm_thr_low', type=float, default=0.5, help='Допустимое отклонение темпа речи от границ')
+    parser.add_argument('--dur_norm_thr_high', type=float, default=5.0, help='Допустимое отклонение темпа речи от границ')
     parser.add_argument('--reinit_every', type=int, default=32, help='Очищать сессию onnx каждые n раз')
     args = parser.parse_args()
 
