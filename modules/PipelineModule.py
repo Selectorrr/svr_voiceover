@@ -50,7 +50,8 @@ class PipelineModule:
                     'postfix': f"job_n {job_n}",
                     'dynamic_ncols': True
                 },
-                rtrim_top_db=15
+                rtrim_top_db=15,
+                stress_exclusions=self.csv.load_stress_exclusions()
             )
         except Exception as e:
             traceback.print_exc()

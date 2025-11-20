@@ -1,5 +1,6 @@
 import csv
 import re
+from functools import lru_cache
 from glob import glob
 from pathlib import Path
 
@@ -136,3 +137,36 @@ class CsvProcessor:
         todo_records = list(filter(lambda i: not self.text.is_sound_word(self.text.get_text(i)[0]), todo_records))
         all_records = list(filter(lambda i: not self.text.is_sound_word(self.text.get_text(i)[0]), all_records))
         return todo_records, all_records
+
+    @lru_cache
+    def load_stress_exclusions(self, path='workspace/stress_dict.csv') -> dict[str, str]:
+        """
+        Читает CSV вида: исходное_слово,замена
+        пример: детектив,дэтэкИв
+        Если файла нет — возвращает {}.
+        """
+        p = Path(path)
+        if not p.is_file():
+            return {}
+
+        mapping: dict[str, str] = {}
+
+        try:
+            with p.open("r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    if not row or len(row) < 2:
+                        continue
+
+                    src = row[0].strip()
+                    dst = row[1].strip()
+
+                    if not src or not dst:
+                        continue
+
+                    mapping[src] = dst
+        except OSError:
+            # на случай проблем с чтением файла
+            return {}
+
+        return mapping
