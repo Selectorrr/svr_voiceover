@@ -1,13 +1,10 @@
+import csv
 import sys
-from pathlib import Path
-
-import soundfile
+from collections import Counter
 
 from entrypoint import get_def_providers
-from modules.AudioProcessor import AudioProcessor
 from modules.CsvProcessor import CsvProcessor
 from modules.ModelFactory import ModelFactory
-from modules.PipelineModule import SynthesisInput
 from modules.TextProcessor import TextProcessor
 
 config = {
@@ -24,120 +21,221 @@ config = {
 }
 text_module = TextProcessor()
 csv_module = CsvProcessor(config, text_module)
-audio_module = AudioProcessor(config)
 
 factory = None
+
+
 def _worker_init(config):
     global factory
     factory = ModelFactory(config)
 
+
 _worker_init(config)
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 
-
-def group_top_speakers(items, top_n=30):
-    if not items:
+def build_balanced_subset(items, coverage: float = 0.85, target_total: int = 10_000):
+    """
+    1) Считаем counts[sp].
+    2) Отбираем ядро спикеров, которые дают coverage (0.85) объёма реплик.
+    3) В ядре:
+        - min_c = мин(count)
+        - scale ≈ target_total * min_c / core_total
+        - ideal_sp = (count_sp / min_c) * scale
+        - k_sp ≈ ideal_sp, с корректировкой так, чтобы суммарно было target_total.
+        - берём k_sp самых длинных реплик по text.
+    """
+    if not items or target_total <= 0:
         return []
 
-    total = len(items)
-    counts = Counter(d["speaker"] for d in items)
-
-    top = sorted(counts.items(), key=lambda kv: (-kv[1], str(kv[0])))[:top_n]
-    top_set = {sp for sp, _ in top}
-
-    groups = defaultdict(list)
+    # --- группировка по speaker ---
+    by_speaker = defaultdict(list)
     for d in items:
-        sp = d["speaker"]
-        if sp in top_set:
-            groups[sp].append(d)
+        sp = d.get("speaker")
+        if sp is None:
+            continue
+        by_speaker[sp].append(d)
 
+    if not by_speaker:
+        return []
+
+    counts = {sp: len(lst) for sp, lst in by_speaker.items()}
+    total = sum(counts.values())
+    if total == 0:
+        return []
+
+    coverage = max(0.0, min(1.0, float(coverage)))
+
+    # --- шаг 1–2: ядро по кумулятивному покрытию ---
+    speakers_sorted = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+
+    core_speakers = []
+    cum = 0
+    for sp, c in speakers_sorted:
+        core_speakers.append(sp)
+        cum += c
+        if cum / total >= coverage:
+            break
+
+    if not core_speakers:
+        return []
+
+    counts_core = {sp: counts[sp] for sp in core_speakers}
+    core_total = sum(counts_core.values())
+    min_c = min(counts_core.values())
+    if min_c <= 0:
+        min_c = 1
+
+    # если target >= объёма ядра — можно просто вернуть всё ядро
+    if target_total >= core_total:
+        result = []
+        for sp in core_speakers:
+            result.extend(by_speaker[sp])
+        return result
+
+    # --- шаг 3: прямой расчёт scale и k_sp ---
+    # scale так, чтобы ожидаемая сумма была целевой
+    # (если игнорировать клип и округление)
+    scale = target_total * min_c / core_total
+
+    speakers = core_speakers
+
+    ideal = {}
+    base = {}
+    frac = {}
+    sum_base = 0
+
+    for sp in speakers:
+        c = counts_core[sp]
+        ratio = c / min_c
+        x = ratio * scale
+        k = int(x)  # floor
+
+        if k < 1:
+            k = 1
+        if k > c:
+            k = c
+
+        ideal[sp] = x
+        base[sp] = k
+        frac[sp] = x - k  # дробная часть
+        sum_base += k
+
+    diff = target_total - sum_base
+
+    # --- корректировка: добрасываем / убираем по 1, ориентируясь на дробные части ---
+    if diff > 0:
+        # надо добавить diff штук: берём тех, у кого дробная часть больше,
+        # и у кого ещё есть запас до исходного c
+        candidates = sorted(
+            speakers,
+            key=lambda sp: frac[sp],
+            reverse=True
+        )
+        i = 0
+        while diff > 0 and i < len(candidates):
+            sp = candidates[i]
+            if base[sp] < counts_core[sp]:
+                base[sp] += 1
+                diff -= 1
+            else:
+                i += 1
+
+    elif diff < 0:
+        need = -diff
+        # надо убрать: идём от наименьших дробных частей
+        candidates = sorted(
+            speakers,
+            key=lambda sp: frac[sp]
+        )
+        i = 0
+        while need > 0 and i < len(candidates):
+            sp = candidates[i]
+            if base[sp] > 1:
+                base[sp] -= 1
+                need -= 1
+            else:
+                i += 1
+        # если need > 0 — значит target_total < кол-ва спикеров, но
+        # по-хорошему до этого лучше не доводить
+
+    # --- собираем итог ---
     result = []
-    for sp, cnt in top:
-        grp = groups[sp]
+    for sp in speakers:
+        keep_n = base[sp]
+        grp_sorted = sorted(
+            by_speaker[sp],
+            key=lambda x: len(x.get("text", "")),
+            reverse=True,
+        )
+        result.extend(grp_sorted[:keep_n])
 
-        # сортируем по 'text' от большего к меньшему
-        grp_sorted = sorted(grp, key=lambda x: len(x["text"]), reverse=True)
-
-        result.append({
-            "speaker": sp,
-            "count": cnt,
-            "percent": round(cnt * 100.0 / total, 2),
-            "items": grp_sorted,
-        })
+    # финальная подстраховка
+    if len(result) > target_total:
+        result = result[:target_total]
 
     return result
 
-def build_voice(records, voice_count=10):
-    voice_num = 1
-    voices = {}
-    for record in records:
-        path = Path(f"/workspace/SynthVoiceRu/workspace/resources/{record['audio']}")
-        # Прочитаем оригинальный аудио файл и его громкость для определения просодии
-        try:
-            raw_wave_norm, meta, raw_wave, raw_sr = audio_module.load_audio(str(path))
-        except ValueError as e:
-            print(e)
-            return
-        # Определяем текст для озвучки
-        # text, is_accented = text_module.get_text(record)
-        speaker = record["speaker"]
 
-        voice = Path(f"/workspace/SynthVoiceRu/workspace/voices/{speaker}/{voice_num}/{speaker}.wav")
-        style_wave = audio_module.build_speaker_sample(voice, raw_wave_norm, raw_sr)
-        voices[voice_num] = style_wave, 24_000
-        if (len(style_wave) / 24_000) * 1000 >= config['tone_sample_len']:
-            voice_num += 1
-        if voice_num > voice_count:
-            break
-    return voices
+def save_voice_index_csv(path: str, records):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        for r in records:
+            audio = r.get("audio")
+            if audio is not None:
+                writer.writerow([audio])
 
 
-def infer(input):
-    job_n = ModelFactory.get_job_n()
-    waves = factory.svr_tts.synthesize(
-        [input],
-        tqdm_kwargs={
-            'leave': False,
-            'smoothing': 0,
-            'position': job_n + 1,
-            'postfix': f"job_n {job_n}",
-            'dynamic_ncols': True
-        }
-    )
-    return waves[0]
+def _collect_counts(items):
+    c = Counter()
+    for d in items:
+        sp = d.get("speaker")
+        if sp is not None:
+            c[sp] += 1
+    return c
+
+
+def print_stats(title: str, items):
+    counts = _collect_counts(items)
+    if not counts:
+        print(f"=== {title}: пусто ===")
+        return
+
+    total = sum(counts.values())
+    num_speakers = len(counts)
+    min_c = min(counts.values())
+    max_c = max(counts.values())
+
+    print(f"=== {title} ===")
+    print(f"Строк: {total}")
+    print(f"Спикеров: {num_speakers}")
+    print(f"Мин. реплик на спикера: {min_c}")
+    print(f"Макс. реплик на спикера: {max_c}")
+
+    print("Топ 10 спикеров:")
+    for sp, cnt in counts.most_common(10):
+        pct = cnt * 100.0 / total
+        print(f"  {sp}: {cnt} ({pct:.2f}%)")
+
+    # сколько редких с мин. количеством
+    rare_count = sum(1 for v in counts.values() if v == min_c)
+    print(f"Спикеров с минимальным числом реплик ({min_c}): {rare_count}")
+    print()
 
 
 def main():
     _, all_records = csv_module.find_changed_text_rows_csv()
-    groups = group_top_speakers(all_records)
-    from tqdm import tqdm
-    num = 0
-    for group in tqdm(groups, smoothing=0):
-        num += 1
-        print(f"{num}/{len(groups)}")
-        speaker = group['speaker']
-        print(f"{speaker}: {len(group['items'])} элементов ({len(group['items']) / len(all_records) * 100:.1f}%)")
-        voices = build_voice(group['items'], voice_count=10)
-        for voice_num, style in voices.items():
-            style_wave, style_sr = style
-            record = group['items'][0]
-            text, is_accented = text_module.get_text(record)
 
-            path = Path(f"/workspace/SynthVoiceRu/workspace/resources/{record['audio']}")
-            raw_wave_norm, meta, raw_wave, raw_sr = audio_module.load_audio(str(path))
+    print_stats("До ужатия", all_records)
 
-            input = SynthesisInput(text=text, stress=is_accented,
-                           timbre_wave_24k=style_wave,
-                           prosody_wave_24k=audio_module.prepare_prosody(raw_wave_norm, raw_sr))
+    balanced = build_balanced_subset(all_records, coverage=0.85, target_total=10_000)
 
-            sample_path = Path(f"/workspace/SynthVoiceRu/workspace/voices/{speaker}/{voice_num}/sample.wav")
-            sample_path.parent.mkdir(parents=True, exist_ok=True)
-            wave = infer(input)
-            soundfile.write(str(sample_path), wave, 22_050)
+    print_stats("После ужатия", balanced)
 
+    print(f"Всего строк исходно: {len(all_records)}")
+    print(f"После ужатия: {len(balanced)}")
 
-    pass
+    save_voice_index_csv("workspace/voice_index.csv", balanced)
 
 
 if __name__ == '__main__':

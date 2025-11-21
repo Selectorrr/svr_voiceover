@@ -32,12 +32,12 @@ if __name__ == '__main__':
                         help='Список провайдеров для выполнения (ONNX runtime)')
     parser.add_argument('--path_filter', type=str, default='',
                         help='Фильтр реплик попадающих в озвучку по пути файла')
-    parser.add_argument('--user_models_dir', type=str, default='',
+    parser.add_argument('--user_models_dir', type=str, default='./workspace/model/',
                         help='Путь до кастомных моделей если есть')
     parser.add_argument('--dur_norm_low', type=float, default=5.0, help='Минимальный порог темпа речи')
     parser.add_argument('--dur_norm_high', type=float, default=16.0, help='Максимальный порог темпа речи')
     parser.add_argument('--dur_norm_thr_low', type=float, default=0.5, help='Допустимое отклонение темпа речи от границ')
-    parser.add_argument('--dur_norm_thr_high', type=float, default=5.0, help='Допустимое отклонение темпа речи от границ')
+    parser.add_argument('--dur_norm_thr_high', type=float, default=7.0, help='Допустимое отклонение темпа речи от границ')
     parser.add_argument('--reinit_every', type=int, default=32, help='Очищать сессию onnx каждые n раз')
     args = parser.parse_args()
 
