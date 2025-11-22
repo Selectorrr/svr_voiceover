@@ -1,6 +1,5 @@
 import argparse
 import io
-import math
 import os
 from glob import glob
 from pathlib import Path
@@ -9,7 +8,6 @@ import librosa
 import numpy
 import soundfile
 from pqdm.processes import pqdm
-from pydub.silence import detect_nonsilent
 from sympy.physics.quantum.matrixutils import to_numpy
 
 from modules.AudioProcessor import AudioProcessor
@@ -140,9 +138,18 @@ def worker(task):
 
     result_wave = main(wave, sr, raw_wave, raw_sr, is_use_voice_len=is_use_voice_len)
 
-    out_path = Path(f"workspace/dub_aligned/{in_wav[len(src_dir):]}").with_suffix('.wav')
+    out_path = Path(f"workspace/dub_aligned/{in_wav[len(src_dir):]}")
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    soundfile.write(out_path, result_wave, sr, format='wav')
+
+    wave_format = out_path.suffix[1:]
+    codec = "libvorbis" if wave_format == 'ogg' else None
+    parameters = ["-qscale:a", "9"] if wave_format == 'ogg' else None
+    AudioProcessor.to_segment(result_wave, sr).export(
+        out_path,
+        format=wave_format,
+        codec=codec,
+        parameters=parameters
+    )
 
 
 if __name__ == '__main__':

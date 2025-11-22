@@ -4,7 +4,6 @@ from pathlib import Path
 
 import numpy
 import onnxruntime
-import soundfile
 from pqdm.processes import pqdm
 from svr_tts.core import SynthesisInput
 
@@ -151,7 +150,16 @@ class PipelineModule:
             dub_file = Path(f"workspace/dub/{i_path}")
             dub_file.parent.mkdir(parents=True, exist_ok=True)
             dub_file = Path(str(dub_file)).with_suffix(f".{self.config['ext']}")
-            soundfile.write(dub_file, dub, sr)
+
+            wave_format=self.config['ext']
+            codec="libvorbis" if wave_format == 'ogg' else None
+            parameters=["-qscale:a", "9"] if wave_format == 'ogg' else None
+            AudioProcessor.to_segment(dub, sr).export(
+                dub_file,
+                format=wave_format,
+                codec=codec,
+                parameters=parameters
+            )
 
     def run(self):
         # Найдем все строки что нужно озвучить с учетом разных версий файлов

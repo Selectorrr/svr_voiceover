@@ -25,7 +25,10 @@ def mixing(meta: dict):
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    mixed_audio.export(out_path, format='wav')
+    wave_format = out_path.suffix[1:]
+    codec = "libvorbis" if wave_format == 'ogg' else None
+    parameters = ["-qscale:a", "9"] if wave_format == 'ogg' else None
+    mixed_audio.export(out_path, format=wave_format, codec=codec, parameters=parameters)
 
 src_dir = f"{BASE_DIR}/dub_aligned/"
 if not Path(src_dir).exists():
