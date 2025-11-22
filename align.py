@@ -176,30 +176,27 @@ if __name__ == '__main__':
     src_dir = 'workspace/dub_lipsync'
     index = {}
     for src_path in glob("**/*.*", root_dir=src_dir, recursive=True):
-        src_stem = Path(src_path).stem.lower()
-        meta = index.get(src_stem, {})
+        src_key = str(Path(src_path).with_suffix('.key')).lower()
+        meta = index.get(src_key, {})
         meta['src'] = f"{src_dir}/{src_path}"
-        index[src_stem] = meta
+        index[src_key] = meta
 
     for speedup_path in glob("**/*.*", root_dir='workspace/dub_aligned', recursive=True):
-        speedup_stem = Path(speedup_path).stem.lower()
-        meta = index.get(speedup_stem, {})
+        speedup_key = str(Path(speedup_path).with_suffix('.key')).lower()
+        meta = index.get(speedup_key, {})
         meta['speedup'] = f"workspace/dub_aligned/{speedup_path}"
-        index[speedup_stem] = meta
+        index[speedup_key] = meta
 
     for resource_path in glob("**/*.*", root_dir='workspace/resources', recursive=True):
-        resource_stem = Path(resource_path).stem.lower()
-        meta = index.get(resource_stem, {})
+        resource_key = str(Path(resource_path).with_suffix('.key')).lower()
+        meta = index.get(resource_key, {})
         meta['resource'] = f"workspace/resources/{resource_path}"
-        index[resource_stem] = meta
+        index[resource_key] = meta
 
     for key, value in list(index.items()):
-        if 'src' not in value.keys():
-            del index[key]
-            continue
-        if 'speedup' in value.keys():
+        if 'src' not in value.keys() or 'speedup' in value.keys():
             del index[key]
 
     # прокидываем флаг в worker через задачи
     tasks = [(meta, use_voice_len_flag) for meta in index.values()]
-    pqdm(tasks, worker, n_jobs=os.cpu_count(), desc="Speedup")
+    pqdm(tasks, worker, n_jobs=os.cpu_count(), desc="Speedup", smoothing=0)

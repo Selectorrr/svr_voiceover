@@ -59,31 +59,29 @@ def main():
     global src_dir
     index = {}
     for src_path in glob("**/*.*", root_dir=src_dir, recursive=True):
-        src_stem = Path(src_path).stem.lower()
-        meta = index.get(src_stem, {})
+        src_path_index = str(Path(src_path).with_suffix('.key')).lower()
+        meta = index.get(src_path_index, {})
         meta['src'] = src_path
-        index[src_stem] = meta
+        index[src_path_index] = meta
 
     for lipsync_path in glob("**/*.*", root_dir='workspace/dub_lipsync', recursive=True):
-        lipsync_stem = Path(lipsync_path).stem.lower()
-        meta = index.get(lipsync_stem, {})
+        lipsync_index = str(Path(lipsync_path).with_suffix('.key')).lower()
+        meta = index.get(lipsync_index, {})
         meta['lipsync'] = lipsync_path
-        index[lipsync_stem] = meta
+        index[lipsync_index] = meta
 
     for resource_path in glob("**/*.*", root_dir='workspace/resources', recursive=True):
-        resource_stem = Path(resource_path).stem.lower()
-        meta = index.get(resource_stem, {})
+        resource_index = str(Path(resource_path).with_suffix('.key')).lower()
+        meta = index.get(resource_index, {})
         meta['resource'] = resource_path
-        index[resource_stem] = meta
+        index[resource_index] = meta
 
     for key, value in list(index.items()):
-        if 'resource' not in value.keys() or 'src' not in value.keys():
-            del index[key]
-        if 'lipsync' in value.keys():
+        if 'resource' not in value.keys() or 'src' not in value.keys() or 'lipsync' in value.keys():
             del index[key]
 
     n_jobs = max(1, (os.cpu_count() or 4) - 1)
-    pqdm(index.values(), _worker, n_jobs=n_jobs, desc="Aligning")
+    pqdm(index.values(), _worker, n_jobs=n_jobs, desc="Aligning", smoothing=0)
 
 
 if __name__ == "__main__":

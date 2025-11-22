@@ -89,27 +89,25 @@ if not Path(src_dir).exists():
 
 if __name__ == '__main__':
     index = {}
-    for src_path in glob("**/*.*", root_dir=f"{BASE_DIR}/resources", recursive=True):
-        src_stem = Path(src_path).stem.lower()
-        meta = index.get(src_stem, {})
-        meta['resource'] = src_path
-        index[src_stem] = meta
+    for resource_path in glob("**/*.*", root_dir=f"{BASE_DIR}/resources", recursive=True):
+        resource_key = str(Path(resource_path).with_suffix('.key')).lower()
+        meta = index.get(resource_key, {})
+        meta['resource'] = resource_path
+        index[resource_key] = meta
     for src_path in glob("**/*.*", root_dir=src_dir, recursive=True):
-        src_stem = Path(src_path).stem.lower()
-        meta = index.get(src_stem, {})
+        src_key = str(Path(src_path).with_suffix('.key')).lower()
+        meta = index.get(src_key, {})
         meta['src'] = src_path
-        index[src_stem] = meta
+        index[src_key] = meta
 
     for vo_path in glob("**/*.*", root_dir='workspace/vo', recursive=True):
-        vo_stem = Path(vo_path).stem.lower()
-        meta = index.get(vo_stem, {})
+        vo_key = str(Path(vo_path).with_suffix('.key')).lower()
+        meta = index.get(vo_key, {})
         meta['vo'] = vo_path
-        index[vo_stem] = meta
+        index[vo_key] = meta
 
     for key, value in list(index.items()):
-        if 'resource' not in value.keys() or 'src' not in value.keys():
-            del index[key]
-        if 'vo' in value.keys():
+        if 'resource' not in value.keys() or 'src' not in value.keys() or 'vo' in value.keys():
             del index[key]
 
     pqdm(index.values(), mixing, 24, smoothing=0)
