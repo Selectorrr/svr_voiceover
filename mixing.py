@@ -1,63 +1,10 @@
-import os
-import subprocess
-import tempfile
-from functools import lru_cache
 from glob import glob
 from pathlib import Path
 
-import soundfile
 from pqdm.threads import pqdm
 from pydub import AudioSegment
 
-from modules.AudioProcessor import AudioProcessor
-
 BASE_DIR = "workspace"
-
-
-def _read_wem_in_memory(wem_file_path):
-    # Создаем временный файл
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
-        temp_wav = temp_file.name  # Получаем имя временного файла
-
-    try:
-        # Конвертируем WEM в WAV через vgmstream
-        process = subprocess.run(
-            ["utils/vgmstream/vgmstream-cli.exe", wem_file_path, "-o", temp_wav],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-
-        if process.returncode != 0:
-            raise RuntimeError(f"Ошибка конвертации: {process.stderr.decode()}")
-
-        # Загружаем WAV в память
-        audio, sr = soundfile.read(temp_wav)
-    finally:
-        # Удаляем временный файл
-        if os.path.exists(temp_wav):
-            os.remove(temp_wav)
-
-    return audio, sr
-
-
-@lru_cache(maxsize=1000)
-def load_audio(path):
-    if Path(path).with_suffix('.wem').is_file():
-        path = str(Path(path).with_suffix('.wem'))
-    if path.endswith(".wem"):
-        wave, sr = _read_wem_in_memory(path)
-        segment = AudioProcessor.to_segment(wave, sr)
-    elif path.endswith(".ogg"):
-        segment = AudioSegment.from_ogg(path)
-    elif path.endswith(".wav"):
-        segment = AudioSegment.from_wav(path)
-    else:
-        raise ValueError('Unsupported file')
-    channels = segment.channels
-    if channels > 1:
-        segment = segment.set_channels(1)
-    return segment
-
 
 def mixing(meta: dict):
     dub_segment = AudioSegment.from_file(f"{src_dir}/{meta['src']}")
@@ -78,8 +25,7 @@ def mixing(meta: dict):
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    mixed_audio.export(out_path, format=Path(out_path).suffix[1:])
-
+    mixed_audio.export(out_path, format='wav')
 
 src_dir = f"{BASE_DIR}/dub_aligned/"
 if not Path(src_dir).exists():

@@ -44,7 +44,7 @@ def _worker(meta: dict):
 
         cand = align_by_ref(ref_wav, src_wav, sr_src, td)
 
-        out_path = Path(out_path)
+        out_path = Path(out_path).with_suffix('.wav')
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         AudioSegment.from_wav(cand).export(out_path, format=Path(out_path).suffix[1:])

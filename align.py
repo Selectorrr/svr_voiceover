@@ -1,13 +1,16 @@
-import io
-import os
 import argparse
+import io
+import math
+import os
 from glob import glob
 from pathlib import Path
 
+import librosa
 import numpy
 import soundfile
 from pqdm.processes import pqdm
 from pydub.silence import detect_nonsilent
+from sympy.physics.quantum.matrixutils import to_numpy
 
 from modules.AudioProcessor import AudioProcessor
 
@@ -108,31 +111,10 @@ def align_by_samples(wave, wave_sr, raw_wave, raw_sr, top_db=40, is_use_voice_le
     return wave
 
 
-def trim(wave, sr,
-         silence_thresh=-40,  # dBFS
-         min_silence_len=100,  # ms
-         keep_silence=50):  # ms
-    seg = AudioProcessor.to_segment(wave, sr)  # твоя утилита -> AudioSegment
-
-    ranges = detect_nonsilent(
-        seg,
-        min_silence_len=min_silence_len,
-        silence_thresh=silence_thresh, seek_step=50
-    )
-    if not ranges:
-        return wave[:0], (0, 0)
-
-    start_ms = max(0, ranges[0][0] - keep_silence)
-    end_ms = min(len(seg), ranges[-1][1] + keep_silence)
-
-    # обрезок -> ndarray
-    y_trim, _ = AudioProcessor.to_ndarray(seg[start_ms:end_ms])  # твоя утилита -> (data, sr)
-
-    # индексы в сэмплах исходника
-    start_sample = int(round(start_ms * sr / 1000.0))
-    end_sample = int(round(end_ms * sr / 1000.0))
-
-    return y_trim, (start_sample, end_sample)
+def trim(wave, sr):
+    if wave.ndim > 1:
+        wave, sr = to_numpy(AudioProcessor.to_segment(wave, sr).set_channels(1))
+    return librosa.effects.trim(wave, top_db=40)
 
 
 def main(wave, sr, raw_wave, raw_sr, is_use_voice_len=False):
@@ -158,9 +140,9 @@ def worker(task):
 
     result_wave = main(wave, sr, raw_wave, raw_sr, is_use_voice_len=is_use_voice_len)
 
-    out_path = Path(f"workspace/dub_aligned/{in_wav[len(src_dir):]}")
+    out_path = Path(f"workspace/dub_aligned/{in_wav[len(src_dir):]}").with_suffix('.wav')
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    soundfile.write(out_path, result_wave, sr, format=out_path.suffix[1:])
+    soundfile.write(out_path, result_wave, sr, format='wav')
 
 
 if __name__ == '__main__':
