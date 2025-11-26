@@ -115,7 +115,7 @@ class PipelineModule:
             path = Path(f"workspace/resources/{record['audio']}")
             # Прочитаем оригинальный аудио файл и его громкость для определения просодии
             try:
-                raw_wave_24k, meta, raw_wave, raw_sr = self.audio.load_audio(str(path))
+                raw_wave_24k, meta, raw_wave, raw_sr = self.audio.load_audio_norm(str(path))
             except ValueError as e:
                 print(e)
                 continue

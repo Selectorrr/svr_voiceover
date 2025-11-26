@@ -3,7 +3,6 @@ import os
 import re
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 import librosa
@@ -19,16 +18,17 @@ from modules.TextProcessor import similarity
 
 OUTPUT_SR = 22_050
 
+sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
 
 class AudioProcessor:
     def __init__(self, config):
         self.tone_sample_len = config['tone_sample_len']
-        self.sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
         self.is_respect_mos = config['is_respect_mos']
         self.dur_norm_low = config['dur_norm_low'] - config['dur_norm_thr_low']
         self.dur_norm_high = config['dur_norm_high'] + config['dur_norm_thr_high']
 
-    def _read_vg_in_memory(self, wem_file_path):
+    @staticmethod
+    def _read_vg_in_memory(wem_file_path):
         # Создаем временный файл
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
             temp_wav = temp_file.name
@@ -81,23 +81,28 @@ class AudioProcessor:
         normalized_audio = audio_segment.apply_gain(loudness_difference)
         return normalized_audio
 
-    def load_audio(self, path):
+    @staticmethod
+    def load_audio(path):
         suffix = Path(path).suffix
-        if suffix in self.sound_file_formats:
+        if suffix in sound_file_formats:
             # Если формат файла поддерживается soundfile то читаем сразу им
             wave, sr = soundfile.read(path)
         elif suffix in {'.m4a', '.mp4', '.wma', '.aac'}:
             # Если формат поддерживается pydub то попробуем прочитать им
-            wave, sr = self.to_ndarray(AudioSegment.from_file(path, suffix.lstrip('.'), parameters=None))
+            wave, sr = AudioProcessor.to_ndarray(AudioSegment.from_file(path, suffix.lstrip('.'), parameters=None))
         else:
             try:
                 # Что-ж видимо это экзотический формат или игровой без конвертации файл не прочитать, пробуем vgmstream
-                wave, sr = self._read_vg_in_memory(path)
+                wave, sr = AudioProcessor._read_vg_in_memory(path)
             except Exception as e:
                 raise ValueError(f"Unsupported file: {e}")
+        return wave, sr
+
+    def load_audio_norm(self, path):
+        wave, sr = AudioProcessor.load_audio(path)
         raw_wave, raw_sr = wave, sr
-        segment = self.to_segment(wave, sr)
-        if not self.is_has_sound(segment):
+        segment = AudioProcessor.to_segment(wave, sr)
+        if not AudioProcessor.is_has_sound(segment):
             raise ValueError(f"No sound: {path}")
 
         channels = segment.channels

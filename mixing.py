@@ -4,11 +4,15 @@ from pathlib import Path
 from pqdm.threads import pqdm
 from pydub import AudioSegment
 
+from modules.AudioProcessor import AudioProcessor
+
 BASE_DIR = "workspace"
 
 def mixing(meta: dict):
-    dub_segment = AudioSegment.from_file(f"{src_dir}/{meta['src']}")
-    resource_segment = AudioSegment.from_file(f"{BASE_DIR}/resources/{meta['resource']}")
+    dub_wave, dub_sr = AudioProcessor.load_audio(f"{src_dir}/{meta['src']}")
+    dub_segment = AudioProcessor.to_segment(dub_wave, dub_sr)
+    r_wave, r_sr = AudioProcessor.load_audio(f"{BASE_DIR}/resources/{meta['resource']}")
+    resource_segment = AudioProcessor.to_segment(r_wave, r_sr)
     raw_audio = resource_segment - 9
     if raw_audio.frame_rate != dub_segment.frame_rate:
         raw_audio = raw_audio.set_frame_rate(dub_segment.frame_rate)
