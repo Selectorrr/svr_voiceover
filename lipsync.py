@@ -8,6 +8,8 @@ import soundfile as sf
 from pqdm.processes import pqdm
 from pydub import AudioSegment
 
+from modules.AudioProcessor import AudioProcessor
+
 
 def align_by_ref(ref_wav: str, src_wav: str, sr_src: int, td):
     rec = ad.CorrelationRecognizer()
@@ -37,7 +39,9 @@ def _worker(meta: dict):
         td = Path(td)
         ref_wav = os.path.join(td, "ref.wav")
         src_wav = os.path.join(td, "src.wav")
-        AudioSegment.from_file(ref_path, format=f"{Path(ref_path).suffix[1:]}").export(ref_wav, format="wav")
+        dub_wave, dub_sr = AudioProcessor.load_audio(ref_path)
+        ref_seg = AudioProcessor.to_segment(dub_wave, dub_sr)
+        ref_seg.export(ref_wav, format="wav")
         AudioSegment.from_file(src_path, format=f"{Path(src_path).suffix[1:]}").export(src_wav, format="wav")
 
         sr_src = sf.info(src_path).samplerate

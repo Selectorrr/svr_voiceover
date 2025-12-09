@@ -134,7 +134,7 @@ def worker(task):
     wave, sr = soundfile.read(in_wav)
 
     raw_path = meta['resource']
-    raw_wave, raw_sr = soundfile.read(raw_path)  # оставил как в исходнике
+    raw_wave, raw_sr = AudioProcessor.load_audio(raw_path)  # оставил как в исходнике
 
     result_wave = main(wave, sr, raw_wave, raw_sr, is_use_voice_len=is_use_voice_len)
 
