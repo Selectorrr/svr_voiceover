@@ -139,36 +139,29 @@ class AudioProcessor:
         lock_path = str(voice_path) + ".lock"
         lock = FileLock(lock_path, timeout=10)
 
-        try:
-            with lock:
-                new_seg = self.to_segment(wave_24k, 24_000)
-                if voice_path.exists():
-                    segment = AudioSegment.from_wav(voice_path)
-                    if segment.frame_rate != 24_000:
-                        segment = segment.set_frame_rate(24_000)
-                    if len(segment) >= self.tone_sample_len:
-                        return self.to_ndarray(segment)[0]
-                    if mos >= mos_good:
-                        end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
-                        if not self._is_similar(end_slice, new_seg):
-                            segment += new_seg
-                else:
-                    segment = new_seg
-
-                segment = self._fix_len(segment)
-
+        with lock:
+            new_seg = self.to_segment(wave_24k, 24_000)
+            if voice_path.exists():
+                segment = AudioSegment.from_wav(voice_path)
+                if segment.frame_rate != 24_000:
+                    segment = segment.set_frame_rate(24_000)
+                if len(segment) >= self.tone_sample_len:
+                    return self.to_ndarray(segment)[0]
                 if mos >= mos_good:
-                    voice_path.parent.mkdir(parents=True, exist_ok=True)
-                    tmp_path = voice_path.with_suffix(".wav.tmp")
-                    segment.export(tmp_path, format="wav")
-                    tmp_path.replace(voice_path)
-                return self.to_ndarray(segment)[0]
-        finally:
-            if os.path.exists(lock_path):
-                try:
-                    os.remove(lock_path)
-                except OSError:
-                    pass
+                    end_slice = segment[-len(new_seg):] if len(segment) >= len(new_seg) else AudioSegment.empty()
+                    if not self._is_similar(end_slice, new_seg):
+                        segment += new_seg
+            else:
+                segment = new_seg
+
+            segment = self._fix_len(segment)
+
+            if mos >= mos_good:
+                voice_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp_path = voice_path.with_suffix(".wav.tmp")
+                segment.export(tmp_path, format="wav")
+                tmp_path.replace(voice_path)
+            return self.to_ndarray(segment)[0]
 
     def _fix_len(self, segment):
         while len(segment) < 1000:
@@ -210,7 +203,10 @@ class AudioProcessor:
 
         asr_result = factory.asr.recognize(audio=wave_16k)
         sim = similarity(text_ref, asr_result.text)
-        return sim >= threshold
+        result = sim >= threshold
+        # if not result:
+            # print(f"invalid sim: asr {asr_result.text} text: {text_ref}")
+        return result
 
     def _validate_len(self, wave, sr, text_ref) -> bool:
         if wave is None or sr <= 0 or not text_ref:
@@ -225,7 +221,10 @@ class AudioProcessor:
             return False
 
         cps = n_chars / sec
-        return self.dur_norm_low <= cps <= self.dur_norm_high
+        result = self.dur_norm_low <= cps <= self.dur_norm_high
+        # if not result:
+        #     print(f"invalid len: csp {cps} text: {text_ref}", text_ref)
+        return result
 
     @staticmethod
     def to_segment(y, sr=24000):

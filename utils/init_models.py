@@ -10,7 +10,7 @@ os.environ["TQDM_POSITION"] = "-1"
 
 REPO_ID = "selectorrrr/svr-tts-large"
 MODEL_FILES = {
-    "base": "svr_base_v3.onnx",
+    "base": "svr_base_v5.onnx",
     "semantic": "svr_semantic.onnx",
     "encoder": "svr_encoder_v1.onnx",
     "style": "svr_style.onnx",

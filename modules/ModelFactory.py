@@ -24,7 +24,7 @@ class ModelFactory:
         result = SVR_TTS(self.config['api_key'], providers=self.config["providers"],
                       provider_options=self._get_provider_opts(), user_models_dir=self.config['user_models_dir'],
                          dur_norm_low=self.config['dur_norm_low'], dur_norm_high=self.config['dur_norm_high'],
-                         reinit_every=self.config['reinit_every'])
+                         reinit_every=self.config['reinit_every'], prosody_cond=self.config['prosody_cond'])
         return result
 
 
