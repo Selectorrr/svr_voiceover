@@ -13,8 +13,9 @@ import soundfile
 from filelock import FileLock
 from pydub import AudioSegment
 from pydub.silence import detect_silence
+from svr_tts.utils import max_cps_log
 
-from modules.TextProcessor import similarity
+from modules.TextProcessor import similarity, is_tts_hallucination
 
 OUTPUT_SR = 22_050
 
@@ -25,7 +26,10 @@ class AudioProcessor:
         self.tone_sample_len = config['tone_sample_len']
         self.is_respect_mos = config['is_respect_mos']
         self.dur_norm_low = config['dur_norm_low'] - config['dur_norm_thr_low']
-        self.dur_norm_high = config['dur_norm_high'] + config['dur_norm_thr_high']
+        self.dur_norm_thr_high = config['dur_norm_thr_high']
+        self.dur_high_t0 = config['dur_high_t0']
+        self.dur_high_t1 = config['dur_high_t1']
+        self.dur_high_k = config['dur_high_k']
 
     @staticmethod
     def _read_vg_in_memory(wem_file_path):
@@ -188,20 +192,25 @@ class AudioProcessor:
         mos = float(outs[0].reshape(-1).mean())
         return mos
 
-    def validate(self, wave_22050, sr, text_ref, threshold=0.75):
+    def validate(self, wave, sr, text_ref, iteration, threshold=0.75, hallucination_threshold=1.0):
+        iteration_thr_delta = iteration * 0.05
+        threshold -= iteration_thr_delta
+        hallucination_threshold -= iteration_thr_delta
         if bool(re.search(r'[A-Za-z0-9]', text_ref)):
             # все равно распознать такой не сможем, редкая ситуация потому считаем валидным
             return True
-        if not self._validate_len(wave_22050, sr, text_ref):
+        if not self._validate_len(wave, sr, text_ref):
             return False
         from modules.PipelineModule import factory
 
-        segment = self.to_segment(wave_22050, sr)
+        segment = self.to_segment(wave, sr)
         segment = segment.set_frame_rate(16_000)
         wave_16k, _ = self.to_ndarray(segment)
         wave_16k = self.rtrim_audio(wave_16k, 16_000, top_db=40)
 
         asr_result = factory.asr.recognize(audio=wave_16k)
+        if is_tts_hallucination(asr_result.text, text_ref, hallucination_threshold):
+            return False
         sim = similarity(text_ref, asr_result.text)
         result = sim >= threshold
         # if not result:
@@ -221,7 +230,9 @@ class AudioProcessor:
             return False
 
         cps = n_chars / sec
-        result = self.dur_norm_low <= cps <= self.dur_norm_high
+        dur_norm_high = max_cps_log(sec, t0=self.dur_high_t0, t1=self.dur_high_t1, k=self.dur_high_k)
+        dur_norm_high = dur_norm_high + self.dur_norm_thr_high
+        result = self.dur_norm_low <= cps <= dur_norm_high
         # if not result:
         #     print(f"invalid len: csp {cps} text: {text_ref}", text_ref)
         return result
@@ -296,3 +307,39 @@ class AudioProcessor:
         )
         total_silence = sum(end - start for start, end in silent_ranges)
         return total_silence < len(seg)
+
+    @staticmethod
+    def _dur_sec(wave: np.ndarray, sr: int) -> float:
+        if wave is None or sr <= 0:
+            return 0.0
+        n = int(wave.shape[0])
+        return n / float(sr) if n > 0 else 0.0
+
+    @staticmethod
+    def speedup_if_need(dub, sr, i_raw_wave, i_raw_sr, max_extra_speed=0.40):
+        """
+        dub ускоряем так, чтобы уложиться в длительность i_raw_wave.
+        Ускорение за один раз ограничиваем max_extra_speed.
+        """
+        if dub is None or i_raw_wave is None:
+            return dub
+
+        dub_len = AudioProcessor._dur_sec(dub, sr)
+        raw_len = AudioProcessor._dur_sec(i_raw_wave, i_raw_sr)
+
+        if raw_len <= 0 or dub_len <= 0:
+            return dub
+
+        ratio = dub_len / raw_len
+
+        if ratio <= 1.0:
+            return dub  # и так не длиннее
+
+        ratio = min(ratio, 1.0 + max_extra_speed)
+
+        segment = AudioProcessor.to_segment(dub, sr)
+        memory_buffer = io.BytesIO()
+        segment.export(memory_buffer, format='wav', parameters=["-af", f"atempo={ratio}"])
+        memory_buffer.seek(0)
+        wave, sr = soundfile.read(memory_buffer)
+        return wave

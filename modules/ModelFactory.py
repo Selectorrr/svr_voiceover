@@ -4,11 +4,13 @@ from functools import cached_property
 
 import GPUtil
 import onnxruntime
+import torch
 from appdirs import user_cache_dir
 from huggingface_hub import hf_hub_download
 from svr_tts import SVR_TTS
 
 from modules.AsrModel import AsrModel
+from modules.VcModel import VcModel
 
 
 class ModelFactory:
@@ -20,11 +22,22 @@ class ModelFactory:
         self.config = config
 
     @cached_property
-    def svr_tts(self):
+    def svr_tts(self) -> 'SVR_TTS':
+        if self.config['vc_type'] == 'default':
+            vc_model = VcModel(torch.device(f"cuda:{self._get_device_id()}"))
+            vc_type = None
+        else:
+            vc_model = None
+            vc_type = self.config['vc_type']
+
         result = SVR_TTS(self.config['api_key'], providers=self.config["providers"],
                       provider_options=self._get_provider_opts(), user_models_dir=self.config['user_models_dir'],
-                         dur_norm_low=self.config['dur_norm_low'], dur_norm_high=self.config['dur_norm_high'],
-                         reinit_every=self.config['reinit_every'], prosody_cond=self.config['prosody_cond'])
+                         dur_norm_low=self.config['dur_norm_low'],
+                         dur_high_t0=self.config['dur_high_t0'],
+                         dur_high_t1=self.config['dur_high_t1'],
+                         dur_high_k=self.config['dur_high_k'],
+                         reinit_every=self.config['reinit_every'], prosody_cond=self.config['prosody_cond'],
+                         vc_func=vc_model, vc_type=vc_type, min_prosody_len=self.config['min_prosody_len'])
         return result
 
 

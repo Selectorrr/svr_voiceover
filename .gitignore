@@ -6,3 +6,5 @@
 *.wav
 *.onnx
 /.env
+Dockerfile*
+s3gen

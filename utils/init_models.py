@@ -15,7 +15,6 @@ MODEL_FILES = {
     "encoder": "svr_encoder_v1.onnx",
     "style": "svr_style.onnx",
     "estimator": "svr_estimator.onnx",
-    "vocoder": "svr_vocoder.onnx",
     "cfe": "svr_cfe.onnx",
 }
 
@@ -27,3 +26,6 @@ hf_hub_download(repo_id="selectorrrr/wav2vec2mos", filename="wav2vec2mos.onnx",
 
 providers = ['CPUExecutionProvider']
 onnx_asr.load_model("alphacep/vosk-model-ru", providers=providers).with_timestamps()
+
+hf_hub_download(repo_id="BSC-LT/vocos-mel-22khz", filename="mel_spec_22khz_univ.onnx",
+                cache_dir=user_cache_dir("svr_tts", "SynthVoiceRu"))

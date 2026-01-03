@@ -1,7 +1,9 @@
+import csv
 import traceback
 from multiprocessing import get_context
 from pathlib import Path
 
+import librosa
 import numpy
 import onnxruntime
 from pqdm.processes import pqdm
@@ -34,8 +36,9 @@ class PipelineModule:
         self.audio = AudioProcessor(config)
         self.speaker = SpeakerProcessor(self.audio)
         self.config = config
+        self.iteration = 0
 
-    def synthesize_batch_with_split(self, inputs):
+    def synthesize_batch_with_split(self, inputs: list[SynthesisInput]):
         job_n = ModelFactory.get_job_n()
 
         # noinspection PyUnresolvedReferences
@@ -58,21 +61,26 @@ class PipelineModule:
 
         result = []
 
-        for i, full_wave_22050 in enumerate(all_waves):
+        for i, full_wave in enumerate(all_waves):
             input = inputs[i]
 
             is_valid = None
 
-            if full_wave_22050 is not None:
+            if full_wave is None:
+                continue
+
+            try:
                 try:
-                    is_valid = self.audio.validate(full_wave_22050, OUTPUT_SR, input.text)
+                    is_valid = self.audio.validate(full_wave, factory.svr_tts.OUTPUT_SR, input.text, self.iteration)
                 except Exception:
                     traceback.print_exc()
 
-            result.append(full_wave_22050 if is_valid else None)
+            except Exception:
+                traceback.print_exc()
+
+            result.append(full_wave if is_valid else None)
 
         return result
-
 
 
     def _efficient_audio_generation(self, vo_items):
@@ -93,7 +101,7 @@ class PipelineModule:
                 continue
             # собираем результаты и одновременно сопоставляем с исходной громкостью и файлом
             vo_item = vo_items[idx]
-            results.append((wave, OUTPUT_SR, vo_item['path'], vo_item['meta'], vo_item['raw_wave'], vo_item['raw_sr'],
+            results.append((wave, factory.svr_tts.OUTPUT_SR, vo_item['path'], vo_item['meta'], vo_item['raw_wave'], vo_item['raw_sr'],
                             vo_item['raw_wave_24k']))
         return results
 
@@ -143,6 +151,11 @@ class PipelineModule:
         results = self._voice_over_items(vo_items)
 
         for dub, sr, i_path, i_meta, i_raw_wave, i_raw_sr, i_raw_wave_24k in results:
+
+            # Не значительно ускорим если это необходимо
+            dub, _ = librosa.effects.trim(dub, top_db=40)
+            dub = AudioProcessor.speedup_if_need(dub, sr, i_raw_wave, i_raw_sr, self.config['max_extra_speed'])
+
             # Восстановим характеристики оригинального аудио
             dub, sr = self.audio.restore_meta(dub, sr, i_meta)
 
@@ -154,6 +167,7 @@ class PipelineModule:
             wave_format=self.config['ext']
             codec="libvorbis" if wave_format == 'ogg' else None
             parameters=["-qscale:a", "9"] if wave_format == 'ogg' else None
+
             AudioProcessor.to_segment(dub, sr).export(
                 dub_file,
                 format=wave_format,
@@ -168,6 +182,7 @@ class PipelineModule:
                               key=lambda d: len(set(self.text.get_text(d)[0])) * len(self.text.get_text(d)[0]),
                               reverse=True)
         while len(todo_records):
+            fieldnames = todo_records[0].keys()
             # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
             batches = [todo_records[i:i + self.config['batch_size']] for i in
                        range(0, len(todo_records), self.config['batch_size'])]
@@ -198,3 +213,10 @@ class PipelineModule:
             todo_records = sorted(todo_records,
                                   key=lambda d: len(set(self.text.get_text(d)[0])) * len(self.text.get_text(d)[0]),
                                   reverse=True)
+
+            with open("workspace/todo_voiceover.csv", "w", newline="", encoding="utf-8-sig") as f:
+                w = csv.DictWriter(f, fieldnames=fieldnames, delimiter=self.config['csv_delimiter'])
+                w.writeheader()
+                w.writerows(todo_records)
+
+            self.iteration += 1

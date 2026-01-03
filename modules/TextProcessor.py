@@ -51,10 +51,11 @@ class TextProcessor:
             chunks.append(cur)
         return chunks
 
-def normalize(text):
+def normalize(text, remove_spaces=True):
     text = text.lower().replace('ё', 'е').replace('й', 'и')
     # нижний регистр, убрать пунктуацию, пробелы
-    text = re.sub(r'[^\w]', '', text)
+    if remove_spaces:
+        text = re.sub(r'[^\w]', '', text)
     # удалить повторяющиеся подряд символы (например: "оооо" → "о")
     text = re.sub(r'(.)\1+', r'\1', text)
     return text
@@ -62,3 +63,33 @@ def normalize(text):
 
 def similarity(a, b):
     return difflib.SequenceMatcher(None, normalize(a), normalize(b)).ratio()
+
+def is_tts_hallucination(text: str, target: str, threshold=0.75) -> bool:
+    """
+    True = похоже на галлюцинацию (не совпало кол-во 'ль' ИЛИ не совпало последнее слово)
+    False = всё ок по этим двум проверкам
+    """
+    t = normalize(text, False)
+    g = normalize(target, False)
+
+    # 1) совпадение количества 'ль'
+    t_l = t.count("ль")
+    g_l = g.count("ль")
+
+    # 2) совпадение последнего слова
+    # берём только слова (буквы/цифры/подчёркивание) — знаки препинания отваливаются
+    t_words = re.findall(r"\w+", t, flags=re.UNICODE)
+    g_words = re.findall(r"\w+", g, flags=re.UNICODE)
+
+    t_last = t_words[-1] if t_words else ""
+    g_last = g_words[-1] if g_words else ""
+
+    sim = similarity(t_last, g_last)
+    is_sim = sim >= threshold
+
+    if threshold >= 0.6:
+        ok = (t_l == g_l) and is_sim
+    else:
+        ok = is_sim
+
+    return not ok
