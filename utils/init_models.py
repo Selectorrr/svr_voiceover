@@ -2,7 +2,7 @@ import os
 
 import onnx_asr
 from appdirs import user_cache_dir
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, snapshot_download
 
 cache_dir = user_cache_dir("svr_tts", "SynthVoiceRu")
 os.makedirs(cache_dir, exist_ok=True)
@@ -29,3 +29,10 @@ onnx_asr.load_model("alphacep/vosk-model-ru", providers=providers).with_timestam
 
 hf_hub_download(repo_id="BSC-LT/vocos-mel-22khz", filename="mel_spec_22khz_univ.onnx",
                 cache_dir=user_cache_dir("svr_tts", "SynthVoiceRu"))
+
+snapshot_download(
+            repo_id="selectorrrr/svr-tts-large",
+            repo_type="model",
+            allow_patterns=["s3gen/**"],
+            token=os.getenv("HF_TOKEN"),  # нужен только если репо приватное
+        )

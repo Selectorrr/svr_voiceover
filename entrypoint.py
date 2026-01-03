@@ -26,8 +26,12 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=32, help='Размер батча')
     parser.add_argument('--n_jobs', type=int, default=None, help='Количество воркеров')
     parser.add_argument('--csv_delimiter', type=str, default=',', help='Разделитель, использующийся в csv.')
+    # По умолчанию MOS учитывается. Если нужно отключить — используйте --no_respect_mos.
+    # (Оставляем --is_respect_mos для обратной совместимости со старыми скриптами.)
     parser.add_argument('--is_respect_mos', action='store_true', default=True,
-                        help='Нужно ли учитывать качество звука для построения сэмпла голоса')
+                        help='Учитывать качество звука (MOS) при построении сэмпла голоса')
+    parser.add_argument('--no_respect_mos', action='store_false', dest='is_respect_mos',
+                        help='Не учитывать качество звука (MOS) при построении сэмпла голоса')
     parser.add_argument('--providers', nargs='+', default=get_def_providers(),
                         help='Список провайдеров для выполнения (ONNX runtime)')
     parser.add_argument('--path_filter', type=str, default='',

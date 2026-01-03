@@ -1,3 +1,4 @@
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -5,13 +6,22 @@ from pathlib import Path
 import numpy
 import soundfile
 from chatterbox import ChatterboxVC
+from huggingface_hub import snapshot_download
 
 MODEL_SR = 24_000
 
 
 class VcModel:
     def __init__(self, device):
-        self.vc = ChatterboxVC.from_local('s3gen', device)
+        # скачает только папку s3gen в кеш HF (и будет переиспользовать кеш)
+        root = Path(snapshot_download(
+            repo_id="selectorrrr/svr-tts-large",
+            repo_type="model",
+            allow_patterns=["s3gen/**"],
+            token=os.getenv("HF_TOKEN"),  # нужен только если репо приватное
+        ))
+
+        self.vc = ChatterboxVC.from_local(str(root / "s3gen"), device)
 
     def __call__(self, full_wave, timbre_wave_24k, prosody_wave_24k) -> numpy.ndarray:
         timbre_wave_24k = timbre_wave_24k[: 5 * MODEL_SR]
