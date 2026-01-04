@@ -7,6 +7,7 @@ import audalign as ad
 import soundfile as sf
 from pqdm.processes import pqdm
 from pydub import AudioSegment
+from pydub.silence import detect_leading_silence
 
 from modules.AudioProcessor import AudioProcessor
 
@@ -28,6 +29,37 @@ def align_by_ref(ref_wav: str, src_wav: str, sr_src: int, td):
         unprocessed=True
     )
     return td / Path(src_wav).name
+
+def _lead_ms(seg: AudioSegment, thresh_db: int = -40, chunk_ms: int = 5) -> int:
+    return detect_leading_silence(seg, silence_threshold=thresh_db, chunk_size=chunk_ms)
+
+
+def _trail_ms(seg: AudioSegment, thresh_db: int = -40, chunk_ms: int = 5) -> int:
+    rev = seg.reverse()
+    return detect_leading_silence(rev, silence_threshold=thresh_db, chunk_size=chunk_ms)
+
+
+def fix_start_like_ref_and_trim_end(
+    ref_seg: AudioSegment,
+    cand_seg: AudioSegment,
+    thresh_db: int = -40,
+    chunk_ms: int = 5,
+) -> AudioSegment:
+    # 1) начало: сделать как у ref
+    ref_lead = _lead_ms(ref_seg, thresh_db, chunk_ms)
+    cand_lead = _lead_ms(cand_seg, thresh_db, chunk_ms)
+
+    if cand_lead > ref_lead:
+        cand_seg = cand_seg[cand_lead - ref_lead:]
+    elif cand_lead < ref_lead:
+        cand_seg = AudioSegment.silent(duration=ref_lead - cand_lead, frame_rate=cand_seg.frame_rate) + cand_seg
+
+    # 2) конец: просто трим тишину
+    tail = _trail_ms(cand_seg, thresh_db, chunk_ms)
+    if tail > 0:
+        cand_seg = cand_seg[:len(cand_seg) - tail]
+
+    return cand_seg
 
 
 # пример запуска
@@ -54,7 +86,11 @@ def _worker(meta: dict):
         wave_format = out_path.suffix[1:]
         codec = "libvorbis" if wave_format == 'ogg' else None
         parameters = ["-qscale:a", "9"] if wave_format == 'ogg' else None
-        AudioSegment.from_wav(cand).export(out_path, format=wave_format, codec=codec, parameters=parameters)
+        result = AudioSegment.from_wav(cand)
+
+        result = fix_start_like_ref_and_trim_end(ref_seg, result, thresh_db=-40, chunk_ms=5)
+
+        result.export(out_path, format=wave_format, codec=codec, parameters=parameters)
 
 
 src_dir = "workspace/dub"

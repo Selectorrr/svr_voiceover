@@ -64,6 +64,15 @@ def normalize(text, remove_spaces=True):
 def similarity(a, b):
     return difflib.SequenceMatcher(None, normalize(a), normalize(b)).ratio()
 
+def _allowed_l_errors(g_l: int, threshold: float, base_thr: float = 0.75) -> int:
+    # при 0.75 -> extra=0
+    # 0.70 -> +1, 0.65 -> +2, 0.60 -> +3 ...
+    extra = int(max(0.0, (base_thr - threshold) / 0.05))
+    extra = min(extra, 4)  # кап, подстрой если надо
+
+    base = g_l // 4  # 1..3->0, 4..7->1, 8..11->2 ...
+    return base + extra
+
 def is_tts_hallucination(text: str, target: str, threshold=0.75) -> bool:
     """
     True = похоже на галлюцинацию (не совпало кол-во 'ль' ИЛИ не совпало последнее слово)
@@ -76,8 +85,9 @@ def is_tts_hallucination(text: str, target: str, threshold=0.75) -> bool:
     t_l = t.count("ль")
     g_l = g.count("ль")
 
-    # 2) совпадение последнего слова
-    # берём только слова (буквы/цифры/подчёркивание) — знаки препинания отваливаются
+    allowed = _allowed_l_errors(t_l, threshold)
+    ok_l = abs(t_l - g_l) <= allowed
+
     t_words = re.findall(r"\w+", t, flags=re.UNICODE)
     g_words = re.findall(r"\w+", g, flags=re.UNICODE)
 
@@ -87,9 +97,6 @@ def is_tts_hallucination(text: str, target: str, threshold=0.75) -> bool:
     sim = similarity(t_last, g_last)
     is_sim = sim >= threshold
 
-    if threshold >= 0.6:
-        ok = (t_l == g_l) and is_sim
-    else:
-        ok = is_sim
+    ok = ok_l and is_sim
 
     return not ok

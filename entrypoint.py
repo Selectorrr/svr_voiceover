@@ -47,8 +47,9 @@ if __name__ == '__main__':
     parser.add_argument('--reinit_every', type=int, default=0, help='Очищать сессию onnx каждые n раз')
     parser.add_argument('--prosody_cond', type=float, default=0.6, help='Насколько сильно следовать оригинальной просодии')
     parser.add_argument('--min_prosody_len', type=float, default=2.0, help='Длина просодии ниже которой она свапнется на тембр')
-    parser.add_argument('--max_extra_speed', type=float, default=0.15, help='Процент на сколько можно ускорить речь при необходимости')
+    parser.add_argument('--max_extra_speed', type=float, default=0.10, help='Процент на сколько можно ускорить речь при необходимости')
     parser.add_argument('--vc_type', type=str, default='default', help='Тип конверсии голоса')
+    parser.add_argument('--vc_default_alpha', type=float, default=0.85, help='Пропорция тембра к просодии для default конверсии')
     args = parser.parse_args()
 
     if args.n_jobs is None:

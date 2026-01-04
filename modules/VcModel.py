@@ -12,7 +12,7 @@ MODEL_SR = 24_000
 
 
 class VcModel:
-    def __init__(self, device):
+    def __init__(self, config, device):
         # скачает только папку s3gen в кеш HF (и будет переиспользовать кеш)
         root = Path(snapshot_download(
             repo_id="selectorrrr/svr-tts-large",
@@ -20,6 +20,7 @@ class VcModel:
             allow_patterns=["s3gen/**"],
             token=os.getenv("HF_TOKEN"),  # нужен только если репо приватное
         ))
+        self.config = config
 
         self.vc = ChatterboxVC.from_local(str(root / "s3gen"), device)
 
@@ -27,7 +28,7 @@ class VcModel:
         timbre_wave_24k = timbre_wave_24k[: 5 * MODEL_SR]
         min_len = min(len(timbre_wave_24k), len(prosody_wave_24k))
 
-        alpha = 0.85  # 85% prosody, 15% timbre
+        alpha = self.config['vc_default_alpha']  # 85% prosody, 15% timbre
         p_len = int(min_len * alpha)
         t_len = min_len - p_len
 
