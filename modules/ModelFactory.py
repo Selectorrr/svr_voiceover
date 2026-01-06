@@ -37,7 +37,8 @@ class ModelFactory:
                          dur_high_t1=self.config['dur_high_t1'],
                          dur_high_k=self.config['dur_high_k'],
                          reinit_every=self.config['reinit_every'], prosody_cond=self.config['prosody_cond'],
-                         vc_func=vc_model, vc_type=vc_type, min_prosody_len=self.config['min_prosody_len'])
+                         vc_func=vc_model, vc_type=vc_type, min_prosody_len=self.config['min_prosody_len'],
+                         cps_min=self.config['cps_min'])
         return result
 
 

@@ -39,9 +39,10 @@ if __name__ == '__main__':
     parser.add_argument('--user_models_dir', type=str, default='./workspace/model/',
                         help='Путь до кастомных моделей если есть')
     parser.add_argument('--dur_norm_low', type=float, default=5.0, help='Минимальный порог темпа речи')
-    parser.add_argument('--dur_high_t0', type=float, default=1.0, help='t0 (сек) для расчёта максимального темпа')
+    parser.add_argument('--dur_high_t0', type=float, default=0.7, help='t0 (сек) для расчёта максимального темпа')
     parser.add_argument('--dur_high_t1', type=float, default=15.0, help='t1 (сек) для расчёта максимального темпа')
-    parser.add_argument('--dur_high_k', type=float, default=10.0, help='k (кривизна) для расчёта максимального темпа')
+    parser.add_argument('--dur_high_k', type=float, default=45.0, help='k (кривизна) для расчёта максимального темпа')
+    parser.add_argument('--cps_min', type=float, default=8.0, help='Максимальное ускорение для коротких реплик')
     parser.add_argument('--dur_norm_thr_low', type=float, default=0.5, help='Допустимое отклонение темпа речи от границ')
     parser.add_argument('--dur_norm_thr_high', type=float, default=4.0, help='Допустимое отклонение темпа речи от границ')
     parser.add_argument('--reinit_every', type=int, default=0, help='Очищать сессию onnx каждые n раз')
