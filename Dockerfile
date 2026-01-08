@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir -U pip setuptools wheel
 
 # зависимости проекта
 RUN pip install --no-cache-dir \
-    svr_tts==0.10.5 \
+    svr_tts==0.11.1 \
     soundfile librosa pydub pyloudnorm GPUtil pqdm \
     onnx-asr[audio] audalign
 

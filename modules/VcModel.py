@@ -26,17 +26,38 @@ class VcModel:
 
     def __call__(self, full_wave, timbre_wave_24k, prosody_wave_24k) -> numpy.ndarray:
         timbre_wave_24k = timbre_wave_24k[: 5 * MODEL_SR]
-        min_len = min(len(timbre_wave_24k), len(prosody_wave_24k))
 
-        alpha = self.config['vc_default_alpha']  # 85% prosody, 15% timbre
-        p_len = int(min_len * alpha)
-        t_len = min_len - p_len
+        alpha = float(self.config['vc_default_alpha'])  # 85% prosody, 15% timbre
+        min_target_sec = float(self.config['min_target_sec'])
+        alpha = max(0.0, min(1.0, alpha))
 
-        timbre_wave = numpy.concatenate((
-            timbre_wave_24k[:int(t_len / 2)],
+        target_len = int(round(min_target_sec * MODEL_SR))
+        if target_len < 1:
+            target_len = 1
+
+        # --- новый блок: собираем mixed длиной target_len ---
+        p_want = int(round(target_len * alpha))
+        p_len = min(p_want, len(prosody_wave_24k))
+
+        t_len = max(0, target_len - p_len)
+
+        left_t = t_len // 2
+        right_t = t_len - left_t
+
+        # если тембра меньше, чем надо — ограничиваемся тем, что есть
+        left_t = min(left_t, len(timbre_wave_24k))
+        right_t = min(right_t, len(timbre_wave_24k))
+
+        mixed = numpy.concatenate((
+            timbre_wave_24k[:left_t],
             prosody_wave_24k[:p_len],
-            timbre_wave_24k[int(len(timbre_wave_24k) - t_len / 2):],
+            timbre_wave_24k[len(timbre_wave_24k) - right_t:],
         ))
+
+        # если не хватило источников и mixed короче target_len — тайлим mixed
+        if target_len > len(mixed) > 0:
+            reps = int(numpy.ceil(target_len / len(mixed)))
+            mixed = numpy.tile(mixed, reps)[:target_len]
 
         # отдельная временная папка на итерацию — без коллизий и проще чистить
         with tempfile.TemporaryDirectory(prefix="svr_") as tmpdir:
@@ -54,7 +75,7 @@ class VcModel:
             MULT = int(0.04 * MODEL_SR)  # 960 при 24k
 
             src = numpy.asarray(full_wave, numpy.float32)
-            tgt = numpy.asarray(timbre_wave, numpy.float32)
+            tgt = numpy.asarray(mixed, numpy.float32)
 
             tgt = pad_to_mult(tgt, MULT)
 

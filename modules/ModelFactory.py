@@ -31,14 +31,12 @@ class ModelFactory:
             vc_type = self.config['vc_type']
 
         result = SVR_TTS(self.config['api_key'], providers=self.config["providers"],
-                      provider_options=self._get_provider_opts(), user_models_dir=self.config['user_models_dir'],
-                         dur_norm_low=self.config['dur_norm_low'],
-                         dur_high_t0=self.config['dur_high_t0'],
-                         dur_high_t1=self.config['dur_high_t1'],
-                         dur_high_k=self.config['dur_high_k'],
-                         reinit_every=self.config['reinit_every'], prosody_cond=self.config['prosody_cond'],
-                         vc_func=vc_model, vc_type=vc_type, min_prosody_len=self.config['min_prosody_len'],
-                         cps_min=self.config['cps_min'])
+                      provider_options=self._get_provider_opts(), user_models_dir=self.config['user_models_dir'],reinit_every=self.config['reinit_every'], prosody_cond=self.config['prosody_cond'],
+                         vc_func=vc_model, vc_type=vc_type, min_prosody_len=self.config['min_prosody_len'],                         speed_search_attempts=self.config['speed_search_attempts'],
+                         speed_match_tolerance_pct=self.config['max_extra_speed'],
+                         speed_clip_min=self.config['speed_clip_min'],
+                         speed_clip_max=self.config['speed_clip_max'],
+                         speed_adjust_step_pct=self.config['speed_adjust_step_pct'])
         return result
 
 

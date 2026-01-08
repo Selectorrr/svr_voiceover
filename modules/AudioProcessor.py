@@ -13,7 +13,6 @@ import soundfile
 from filelock import FileLock
 from pydub import AudioSegment
 from pydub.silence import detect_silence
-from svr_tts.utils import max_cps_log
 
 from modules.TextProcessor import similarity, is_tts_hallucination
 
@@ -25,11 +24,6 @@ class AudioProcessor:
     def __init__(self, config):
         self.tone_sample_len = config['tone_sample_len']
         self.is_respect_mos = config['is_respect_mos']
-        self.dur_norm_low = config['dur_norm_low'] - config['dur_norm_thr_low']
-        self.dur_norm_thr_high = config['dur_norm_thr_high']
-        self.dur_high_t0 = config['dur_high_t0']
-        self.dur_high_t1 = config['dur_high_t1']
-        self.dur_high_k = config['dur_high_k']
 
     @staticmethod
     def _read_vg_in_memory(wem_file_path):
@@ -199,8 +193,6 @@ class AudioProcessor:
         if bool(re.search(r'[A-Za-z0-9]', text_ref)):
             # все равно распознать такой не сможем, редкая ситуация потому считаем валидным
             return True
-        if not self._validate_len(wave, sr, text_ref):
-            return False
         from modules.PipelineModule import factory
 
         segment = self.to_segment(wave, sr)
@@ -215,26 +207,6 @@ class AudioProcessor:
         result = sim >= threshold
         # if not result:
             # print(f"invalid sim: asr {asr_result.text} text: {text_ref}")
-        return result
-
-    def _validate_len(self, wave, sr, text_ref) -> bool:
-        if wave is None or sr <= 0 or not text_ref:
-            return False
-
-        sec = len(wave) / float(sr)
-        if sec <= 0:
-            return False
-
-        n_chars = len(text_ref)
-        if n_chars <= 0:
-            return False
-
-        cps = n_chars / sec
-        dur_norm_high = max_cps_log(sec, t0=self.dur_high_t0, t1=self.dur_high_t1, k=self.dur_high_k)
-        dur_norm_high = dur_norm_high + self.dur_norm_thr_high
-        result = self.dur_norm_low <= cps <= dur_norm_high
-        # if not result:
-        #     print(f"invalid len: csp {cps} text: {text_ref}", text_ref)
         return result
 
     @staticmethod
