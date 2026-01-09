@@ -214,9 +214,28 @@ class PipelineModule:
                                   key=lambda d: len(set(self.text.get_text(d)[0])) * len(self.text.get_text(d)[0]),
                                   reverse=True)
 
-            with open("workspace/todo_voiceover.csv", "w", newline="", encoding="utf-8-sig") as f:
-                w = csv.DictWriter(f, fieldnames=fieldnames, delimiter=self.config['csv_delimiter'])
-                w.writeheader()
-                w.writerows(todo_records)
+            _write_todo_csv("workspace/todo_voiceover.csv", todo_records, self.config["csv_delimiter"])
 
             self.iteration += 1
+
+def _write_todo_csv(path: str, records: list[dict], delimiter: str):
+    cleaned = []
+    field_set = set()
+
+    for r in records:
+        rr = {k: v for k, v in r.items() if k is not None}  # убираем None-ключ
+        cleaned.append(rr)
+        field_set.update(rr.keys())
+
+    fieldnames = list(field_set)
+
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.DictWriter(
+            f,
+            fieldnames=fieldnames,
+            delimiter=delimiter,
+            extrasaction="ignore",
+            restval=""
+        )
+        w.writeheader()
+        w.writerows(cleaned)
