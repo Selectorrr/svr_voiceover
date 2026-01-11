@@ -153,7 +153,6 @@ class PipelineModule:
         for dub, sr, i_path, i_meta, i_raw_wave, i_raw_sr, i_raw_wave_24k in results:
 
             # Не значительно ускорим если это необходимо
-            dub, _ = librosa.effects.trim(dub, top_db=40)
             dub = AudioProcessor.speedup_if_need(dub, sr, i_raw_wave, i_raw_sr, self.config['max_extra_speed'])
 
             # Восстановим характеристики оригинального аудио
