@@ -28,12 +28,35 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir -U pip setuptools wheel
 
 # зависимости проекта
+
 RUN pip install --no-cache-dir \
     svr_tts==0.11.1 \
     soundfile librosa pydub pyloudnorm GPUtil pqdm \
     onnx-asr[audio] audalign
 
 RUN pip install --no-cache-dir chatterbox-tts
+
+#обновим pytorch
+RUN pip uninstall -y torch torchvision torchaudio
+RUN pip install --upgrade --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+#решим конфликты после обновления
+RUN pip uninstall -y numpy scipy
+RUN pip install "numpy<2" "scipy<2" --force-reinstall
+RUN pip install -U pyloudnorm
+
+#обновим onnx
+RUN pip uninstall -y onnxruntime onnxruntime-gpu || true
+RUN pip install -U flatbuffers numpy packaging protobuf sympy coloredlogs
+RUN pip install --pre --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/ onnxruntime-gpu --no-deps
+
+RUN pip install --no-cache-dir --force-reinstall \
+    "numpy>=2.0,<2.4" \
+    "scipy>=1.13,<2" \
+    "numba<0.61" \
+    "llvmlite<0.44"
+
+RUN pip install --no-cache-dir -U pyloudnorm
+
 # vgmstream-cli
 RUN wget -O /tmp/vgmstream-linux-cli.tar.gz \
       https://github.com/vgmstream/vgmstream-releases/releases/download/nightly/vgmstream-linux-cli.tar.gz \
