@@ -44,6 +44,10 @@ def fix_start_like_ref_and_trim_end(
     cand_seg: AudioSegment,
     thresh_db: int = -40,
     chunk_ms: int = 5,
+    *,
+    tail_thresh_db: int = -55,         # порог для конца: ниже = меньше шансов откусить тихую речь
+    min_tail_silence_ms: int = 250,    # тримим только если тишина на конце >= этого значения
+    keep_tail_ms: int = 80,            # оставляем небольшой хвостик, чтобы не срезать затухание
 ) -> AudioSegment:
     # 1) начало: сделать как у ref
     ref_lead = _lead_ms(ref_seg, thresh_db, chunk_ms)
@@ -52,12 +56,17 @@ def fix_start_like_ref_and_trim_end(
     if cand_lead > ref_lead:
         cand_seg = cand_seg[cand_lead - ref_lead:]
     elif cand_lead < ref_lead:
-        cand_seg = AudioSegment.silent(duration=ref_lead - cand_lead, frame_rate=cand_seg.frame_rate) + cand_seg
+        cand_seg = AudioSegment.silent(
+            duration=ref_lead - cand_lead,
+            frame_rate=cand_seg.frame_rate
+        ) + cand_seg
 
-    # 2) конец: просто трим тишину
-    tail = _trail_ms(cand_seg, thresh_db, chunk_ms)
-    if tail > 0:
-        cand_seg = cand_seg[:len(cand_seg) - tail]
+    # 2) конец: аккуратный трим тишины (без откусывания тихих фонем)
+    tail = _trail_ms(cand_seg, tail_thresh_db, chunk_ms)
+    if tail >= min_tail_silence_ms:
+        cut = max(0, tail - keep_tail_ms)
+        if cut:
+            cand_seg = cand_seg[:max(0, len(cand_seg) - cut)]
 
     return cand_seg
 
@@ -88,7 +97,7 @@ def _worker(meta: dict):
         parameters = ["-qscale:a", "9"] if wave_format == 'ogg' else None
         result = AudioSegment.from_wav(cand)
 
-        result = fix_start_like_ref_and_trim_end(ref_seg, result, thresh_db=-40, chunk_ms=5)
+        result = fix_start_like_ref_and_trim_end(ref_seg, result)
 
         result.export(out_path, format=wave_format, codec=codec, parameters=parameters)
 

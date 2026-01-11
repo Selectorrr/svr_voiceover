@@ -8,7 +8,6 @@ import librosa
 import numpy
 import soundfile
 from pqdm.processes import pqdm
-from sympy.physics.quantum.matrixutils import to_numpy
 
 from modules.AudioProcessor import AudioProcessor
 
@@ -111,7 +110,7 @@ def align_by_samples(wave, wave_sr, raw_wave, raw_sr, top_db=40, is_use_voice_le
 
 def trim(wave, sr):
     if wave.ndim > 1:
-        wave, sr = to_numpy(AudioProcessor.to_segment(wave, sr).set_channels(1))
+        wave, sr = AudioProcessor.to_ndarray(AudioProcessor.to_segment(wave, sr).set_channels(1))
     return librosa.effects.trim(wave, top_db=40)
 
 
