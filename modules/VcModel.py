@@ -1,10 +1,10 @@
+import hashlib
 import os
 import subprocess
 import tempfile
 from pathlib import Path
-from collections import OrderedDict
-import hashlib
 
+import librosa
 import numpy
 import soundfile
 import torch
@@ -12,6 +12,7 @@ from chatterbox import ChatterboxVC
 from huggingface_hub import snapshot_download
 
 MODEL_SR = 24_000
+SPEAKER_SR = 16_000
 
 
 class VcModel:
@@ -26,9 +27,8 @@ class VcModel:
         self.device = device
         self.vc = ChatterboxVC.from_local(str(root / "s3gen"), device)
 
-        # CPU LRU cache: voice_key -> ref_dict_cpu (используем ТОЛЬКО при alpha==0)
-        self._voice_cache = OrderedDict()
-        self._voice_cache_max = int(self.config.get("vc_voice_cache_max", 200))
+        self.cache_dir = Path("workspace/voices/timbre_cache")
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
     def _voice_key_from_timbre(timbre_wave_24k: numpy.ndarray, sr: int, sec: float = 10.0) -> str:
@@ -39,33 +39,82 @@ class VcModel:
         h.update(x.tobytes())
         return h.hexdigest()
 
-    def _cache_get(self, key: str):
-        v = self._voice_cache.get(key)
-        if v is None:
+    def _xvec_cache_path(self, key: str) -> Path:
+        return self.cache_dir / f"{key}.pt"
+
+    def _load_xvec_cpu(self, key: str) -> torch.Tensor | None:
+        p = self._xvec_cache_path(key)
+        if not p.exists():
             return None
-        self._voice_cache.move_to_end(key)
-        return v
+        try:
+            t = torch.load(p, map_location="cpu")
+            if torch.is_tensor(t):
+                return t
+        except Exception:
+            pass
+        return None
 
-    def _cache_put(self, key: str, ref_cpu: dict):
-        self._voice_cache[key] = ref_cpu
-        self._voice_cache.move_to_end(key)
-        while len(self._voice_cache) > self._voice_cache_max:
-            self._voice_cache.popitem(last=False)
+    def _save_xvec_cpu(self, key: str, xvec_cpu: torch.Tensor):
+        p = self._xvec_cache_path(key)
+        tmp = p.with_suffix(".pt.tmp")
+        torch.save(xvec_cpu, tmp)
+        tmp.replace(p)
 
-    def _set_vc_ref_from_cpu(self, ref_cpu: dict):
-        # каждый раз переносим на device, кэш остаётся на CPU
-        self.vc.ref_dict = {
-            k: (v.to(self.device, non_blocking=True) if torch.is_tensor(v) else v)
-            for k, v in ref_cpu.items()
-        }
+    def _compute_xvec_cpu(self, timbre_wave_24k: numpy.ndarray) -> torch.Tensor:
+        # x-vector считается по 16k
+        wav16 = librosa.resample(
+            numpy.asarray(timbre_wave_24k, dtype=numpy.float32),
+            orig_sr=MODEL_SR,
+            target_sr=SPEAKER_SR,
+        )
+        if wav16.size == 0:
+            raise ValueError("timbre_wave_24k is empty")
 
-    def __call__(self, full_wave, timbre_wave_24k, prosody_wave_24k) -> numpy.ndarray:
-        timbre_wave_24k = timbre_wave_24k[: 5 * MODEL_SR]
+        wav16_t = torch.from_numpy(wav16).unsqueeze(0)  # (1, L)
+
+        dtype = getattr(self.vc.s3gen, "dtype", torch.float32)
+        with torch.inference_mode():
+            xvec = self.vc.s3gen.speaker_encoder.inference(
+                wav16_t.to(device=self.device, dtype=dtype)
+            )
+
+        # сохраняем на CPU (можно float16 чтобы меньше места)
+        xvec_cpu = xvec.detach().to("cpu")
+        if xvec_cpu.dtype == torch.float32:
+            xvec_cpu = xvec_cpu.to(torch.float16)
+
+        return xvec_cpu
+
+    def __call__(self, full_wave, timbre_wave_24k_orig, prosody_wave_24k) -> numpy.ndarray:
+        timbre_wave_24k = timbre_wave_24k_orig[: 10 * MODEL_SR]
 
         alpha = float(self.config['vc_default_alpha'])
         min_target_sec = float(self.config['min_target_sec'])
         alpha = max(0.0, min(1.0, alpha))
-        eps = 1e-6
+
+        target_len = int(round(min_target_sec * MODEL_SR))
+        if target_len < 1:
+            target_len = 1
+
+        p_want = int(round(target_len * alpha))
+        p_len = min(p_want, len(prosody_wave_24k))
+
+        t_len = max(0, target_len - p_len)
+        left_t = t_len // 2
+        right_t = t_len - left_t
+
+        left_t = min(left_t, len(timbre_wave_24k))
+        right_t = min(right_t, len(timbre_wave_24k))
+
+        mixed = numpy.concatenate((
+            timbre_wave_24k[:left_t],
+            prosody_wave_24k[:p_len],
+            timbre_wave_24k[len(timbre_wave_24k) - right_t:],
+        ))
+
+        if target_len > len(mixed) > 0:
+            reps = int(numpy.ceil(target_len / len(mixed)))
+            mixed = numpy.tile(mixed, reps)[:target_len]
 
         def pad_to_mult(x: numpy.ndarray, mult: int):
             pad = (-len(x)) % mult
@@ -74,6 +123,15 @@ class VcModel:
         MULT = int(0.04 * MODEL_SR)  # 960 при 24k
 
         src = numpy.asarray(full_wave, numpy.float32)
+        tgt = numpy.asarray(mixed, numpy.float32)
+        tgt = pad_to_mult(tgt, MULT)
+
+        # --- x-vector cache (disk only) ---
+        key = self._voice_key_from_timbre(timbre_wave_24k, MODEL_SR, sec=10.0)
+        xvec_cpu = self._load_xvec_cpu(key)
+        if xvec_cpu is None:
+            xvec_cpu = self._compute_xvec_cpu(timbre_wave_24k)
+            self._save_xvec_cpu(key, xvec_cpu)
 
         with tempfile.TemporaryDirectory(prefix="svr_") as tmpdir:
             tmpdir = Path(tmpdir)
@@ -84,75 +142,26 @@ class VcModel:
             converted_wav = tmpdir / "converted.wav"
 
             soundfile.write(src_wav, src, samplerate=MODEL_SR)
+            soundfile.write(tgt_wav, tgt, samplerate=MODEL_SR)
 
-            # =========================
-            # alpha == 0 => чистый тембр => кэшируем ref (CPU)
-            # =========================
-            if alpha <= eps:
-                voice_key = self._voice_key_from_timbre(timbre_wave_24k, MODEL_SR, sec=10.0)
+            # Подменяем speaker_encoder.inference => возвращаем кэшированный x-vector
+            speaker_encoder = self.vc.s3gen.speaker_encoder
+            orig_inference = speaker_encoder.inference
 
-                ref_cpu = self._cache_get(voice_key)
-                if ref_cpu is None:
-                    # cache miss: считаем ref напрямую, без записи target wav на диск
-                    ref_audio = numpy.asarray(timbre_wave_24k, numpy.float32)
-                    ref_audio = ref_audio[: self.vc.DEC_COND_LEN]
-                    ref_audio = pad_to_mult(ref_audio, MULT)
+            dtype = getattr(self.vc.s3gen, "dtype", torch.float32)
+            xvec_dev = xvec_cpu.to(device=self.device, dtype=dtype, non_blocking=True)
 
-                    with torch.inference_mode():
-                        ref_dev = self.vc.s3gen.embed_ref(ref_audio, MODEL_SR, device=self.device)
+            def cached_inference(wav16: torch.Tensor):
+                b = int(wav16.shape[0]) if wav16 is not None and wav16.ndim >= 1 else 1
+                if xvec_dev.shape[0] == b:
+                    return xvec_dev
+                return xvec_dev.expand(b, -1)
 
-                    ref_cpu = {
-                        k: (v.detach().to("cpu") if torch.is_tensor(v) else v)
-                        for k, v in ref_dev.items()
-                    }
-                    self._cache_put(voice_key, ref_cpu)
-
-                    # освободим временные ссылки на device-реф
-                    del ref_dev
-                    if str(self.device).startswith("cuda"):
-                        torch.cuda.empty_cache()
-
-                # всегда ставим ref на device (не опираемся на порядок вызовов)
-                self._set_vc_ref_from_cpu(ref_cpu)
-
-                # важно: НЕ передавать target_voice_path — иначе пересчитает ref
-                wave = self.vc.generate(audio=str(src_wav), target_voice_path=None)
-
-            # =========================
-            # alpha > 0 => ref зависит от prosody => кэш НЕ используем
-            # =========================
-            else:
-                target_len = int(round(min_target_sec * MODEL_SR))
-                if target_len < 1:
-                    target_len = 1
-
-                p_want = int(round(target_len * alpha))
-                p_len = min(p_want, len(prosody_wave_24k))
-
-                t_len = max(0, target_len - p_len)
-                left_t = t_len // 2
-                right_t = t_len - left_t
-
-                left_t = min(left_t, len(timbre_wave_24k))
-                right_t = min(right_t, len(timbre_wave_24k))
-
-                mixed = numpy.concatenate((
-                    timbre_wave_24k[:left_t],
-                    prosody_wave_24k[:p_len],
-                    timbre_wave_24k[len(timbre_wave_24k) - right_t:],
-                ))
-
-                if target_len > len(mixed) > 0:
-                    reps = int(numpy.ceil(target_len / len(mixed)))
-                    mixed = numpy.tile(mixed, reps)[:target_len]
-
-                tgt = numpy.asarray(mixed, numpy.float32)
-                tgt = pad_to_mult(tgt, MULT)
-
-                soundfile.write(tgt_wav, tgt, samplerate=MODEL_SR)
-
-                # тут наоборот: передаём target_voice_path, чтобы ref считался заново
+            speaker_encoder.inference = cached_inference
+            try:
                 wave = self.vc.generate(audio=str(src_wav), target_voice_path=str(tgt_wav))
+            finally:
+                speaker_encoder.inference = orig_inference
 
             wave = wave[0].detach().cpu().numpy()
 
