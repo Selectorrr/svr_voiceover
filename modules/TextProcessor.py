@@ -92,10 +92,14 @@ def is_tts_hallucination(text: str, target: str, threshold=0.75) -> bool:
     g_words = re.findall(r"\w+", g, flags=re.UNICODE)
 
     t_last = t_words[-1] if t_words else ""
+    t_first = t_words[0] if t_words else ""
     g_last = g_words[-1] if g_words else ""
+    g_first = g_words[0] if g_words else ""
 
-    sim = similarity(t_last, g_last)
-    is_sim = sim >= threshold
+    sim_last = similarity(t_last, g_last)
+    sim_first = similarity(t_first, g_first)
+
+    is_sim = sim_last >= threshold and sim_first >= threshold
 
     ok = ok_l and is_sim
 
