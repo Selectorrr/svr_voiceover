@@ -181,7 +181,7 @@ class VcModel:
             sr: int = 24000,
     ):
         filt = (
-            f"[0:a]aresample={sr},highpass=f={fc},treble=g={hi_gain_db}:f={fc}[s_hi];"
+            f"[0:a]aresample={sr},highpass=f={fc},treble=g={hi_gain_db}:f={fc},deesser[s_hi];"
             f"[1:a]aresample={sr},lowpass=f={fc}[c_lo];"
             f"[c_lo][s_hi]amix=inputs=2:weights='1 1':normalize=0,"
             f"alimiter=limit=0.98[out]"
