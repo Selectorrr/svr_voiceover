@@ -13,16 +13,16 @@ from modules.AudioProcessor import AudioProcessor
 
 
 def speedup(wave, sr, ratio, max_len, increment=0.05):
-    segment = AudioProcessor.to_segment(wave, sr)
+    segment_orig = AudioProcessor.to_segment(wave, sr)
     ratio = min(2 - increment, ratio)
-    ratio += increment
+    segment = segment_orig
     while len(segment) > max_len * 1000:
         memory_buffer = io.BytesIO()
-        segment.export(memory_buffer, format='wav', parameters=["-af", f"atempo={ratio}"])
+        segment_orig.export(memory_buffer, format='wav', parameters=["-af", f"atempo={ratio}"])
         memory_buffer.seek(0)
         wave, sr = soundfile.read(memory_buffer)
         segment = AudioProcessor.to_segment(wave, sr)
-        ratio = 1 + increment
+        ratio += increment
 
     wave, sr = AudioProcessor.to_ndarray(segment)
     return wave
@@ -116,8 +116,12 @@ def trim(wave, sr):
 
 def main(wave, sr, raw_wave, raw_sr, is_use_voice_len=False):
     wave, _ = trim(wave, sr)
+    raw_wave_trim, _ = trim(raw_wave, raw_sr)
     wave_len = len(wave) / sr
-    raw_len = len(raw_wave) / raw_sr
+    if is_use_voice_len:
+        raw_len = len(raw_wave_trim) / raw_sr
+    else:
+        raw_len = len(raw_wave) / raw_sr
     rate = wave_len / raw_len
     if rate > 1:
         # ускорим, но не сильнее чем на 50 процентов
@@ -159,9 +163,11 @@ if __name__ == '__main__':
         help="Использовать длину голосовой части вместо полной длины raw_wave"
     )
     args = parser.parse_args()
-    use_voice_len_flag = args.use_voice_len  # по умолчанию False
+    use_voice_len_flag = args.use_voice_len
 
     src_dir = 'workspace/dub_lipsync'
+    if not Path(src_dir).is_dir():
+        src_dir = 'workspace/dub'
     index = {}
     for src_path in glob("**/*.*", root_dir=src_dir, recursive=True):
         src_key = str(Path(src_path).with_suffix('.key')).lower()
