@@ -8,3 +8,4 @@
 /.env
 Dockerfile*
 s3gen
+/pretrained_models/

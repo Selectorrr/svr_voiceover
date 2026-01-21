@@ -15,7 +15,7 @@ MODEL_SR = 24_000
 SPEAKER_SR = 16_000
 
 
-class VcModel:
+class VcS3Gen:
     def __init__(self, config, device):
         root = Path(snapshot_download(
             repo_id="selectorrrr/svr-tts-large",
