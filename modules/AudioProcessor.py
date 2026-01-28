@@ -20,6 +20,8 @@ OUTPUT_SR = 22_050
 
 sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
 
+_CYR = re.compile(r"[А-Яа-яЁё]")
+
 class AudioProcessor:
     def __init__(self, config):
         self.tone_sample_len = config['tone_sample_len']
@@ -186,7 +188,7 @@ class AudioProcessor:
         mos = float(outs[0].reshape(-1).mean())
         return mos
 
-    def validate(self, wave, sr, text_ref, iteration, threshold=0.75, hallucination_threshold=1.0):
+    def validate(self, wave, sr, text_ref, iteration, threshold=0.75, hallucination_threshold=0.80):
         iteration_thr_delta = iteration * 0.05
         threshold -= iteration_thr_delta
         hallucination_threshold -= iteration_thr_delta
@@ -201,12 +203,16 @@ class AudioProcessor:
         wave_16k = self.rtrim_audio(wave_16k, 16_000, top_db=40)
 
         asr_result = factory.asr.recognize(audio=wave_16k)
+        if not bool(_CYR.search(asr_result.text)):
+            return False
         if is_tts_hallucination(asr_result.text, text_ref, hallucination_threshold):
             return False
         sim = similarity(text_ref, asr_result.text)
         result = sim >= threshold
-        # if not result:
-            # print(f"invalid sim: asr {asr_result.text} text: {text_ref}")
+        if not result:
+            print(f"invalid sim: asr {asr_result.text} text: {text_ref}")
+        else:
+            print(f"valid sim")
         return result
 
     @staticmethod

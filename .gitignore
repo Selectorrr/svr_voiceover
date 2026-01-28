@@ -8,3 +8,223 @@
 /.env
 Dockerfile*
 s3gen
+/pretrained_models/
+.buildcache
+
+
+# Byte-compiled / optimized / DLL files
+/vendors/CosyVoice/__pycache__/
+/vendors/CosyVoice/*.py[cod]
+/vendors/CosyVoice/*$py.class
+
+# Visual Studio Code files
+/vendors/CosyVoice/.vscode
+/vendors/CosyVoice/.vs
+
+# PyCharm files
+/vendors/CosyVoice/.idea
+
+# Eclipse Project settings
+/vendors/CosyVoice/*.*project
+/vendors/CosyVoice/.settings
+
+# Sublime Text settings
+/vendors/CosyVoice/*.sublime-workspace
+/vendors/CosyVoice/*.sublime-project
+
+# Editor temporaries
+/vendors/CosyVoice/*.swn
+/vendors/CosyVoice/*.swo
+/vendors/CosyVoice/*.swp
+/vendors/CosyVoice/*.swm
+/vendors/CosyVoice/*~
+
+# IPython notebook checkpoints
+/vendors/CosyVoice/.ipynb_checkpoints
+
+# macOS dir files
+/vendors/CosyVoice/.DS_Store
+
+/vendors/CosyVoice/exp
+/vendors/CosyVoice/data
+/vendors/CosyVoice/raw_wav
+/vendors/CosyVoice/tensorboard
+/vendors/CosyVoice/**/*build*
+
+# Clangd files
+/vendors/CosyVoice/.cache
+/vendors/CosyVoice/compile_commands.json
+
+# train/inference files
+/vendors/CosyVoice/*.wav
+/vendors/CosyVoice/*.m4a
+/vendors/CosyVoice/*.aac
+/vendors/CosyVoice/*.pt
+/vendors/CosyVoice/pretrained_models/*
+/vendors/CosyVoice/*_pb2_grpc.py
+/vendors/CosyVoice/*_pb2.py
+/vendors/CosyVoice/*.tar
+
+# Byte-compiled / optimized / DLL files
+vendors/CosyVoice/third_party/Matcha-TTS/__pycache__/
+vendors/CosyVoice/third_party/Matcha-TTS/*.py[cod]
+vendors/CosyVoice/third_party/Matcha-TTS/*$py.class
+
+# C extensions
+vendors/CosyVoice/third_party/Matcha-TTS/*.so
+
+# Distribution / packaging
+vendors/CosyVoice/third_party/Matcha-TTS/.Python
+vendors/CosyVoice/third_party/Matcha-TTS/build/
+vendors/CosyVoice/third_party/Matcha-TTS/develop-eggs/
+vendors/CosyVoice/third_party/Matcha-TTS/dist/
+vendors/CosyVoice/third_party/Matcha-TTS/downloads/
+vendors/CosyVoice/third_party/Matcha-TTS/eggs/
+vendors/CosyVoice/third_party/Matcha-TTS/.eggs/
+vendors/CosyVoice/third_party/Matcha-TTS/lib/
+vendors/CosyVoice/third_party/Matcha-TTS/lib64/
+vendors/CosyVoice/third_party/Matcha-TTS/parts/
+vendors/CosyVoice/third_party/Matcha-TTS/sdist/
+vendors/CosyVoice/third_party/Matcha-TTS/var/
+vendors/CosyVoice/third_party/Matcha-TTS/wheels/
+vendors/CosyVoice/third_party/Matcha-TTS/pip-wheel-metadata/
+vendors/CosyVoice/third_party/Matcha-TTS/share/python-wheels/
+vendors/CosyVoice/third_party/Matcha-TTS/*.egg-info/
+vendors/CosyVoice/third_party/Matcha-TTS/.installed.cfg
+vendors/CosyVoice/third_party/Matcha-TTS/*.egg
+vendors/CosyVoice/third_party/Matcha-TTS/MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+vendors/CosyVoice/third_party/Matcha-TTS/*.manifest
+vendors/CosyVoice/third_party/Matcha-TTS/*.spec
+
+# Installer logs
+vendors/CosyVoice/third_party/Matcha-TTS/pip-log.txt
+vendors/CosyVoice/third_party/Matcha-TTS/pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+vendors/CosyVoice/third_party/Matcha-TTS/htmlcov/
+vendors/CosyVoice/third_party/Matcha-TTS/.tox/
+vendors/CosyVoice/third_party/Matcha-TTS/.nox/
+vendors/CosyVoice/third_party/Matcha-TTS/.coverage
+vendors/CosyVoice/third_party/Matcha-TTS/.coverage.*
+vendors/CosyVoice/third_party/Matcha-TTS/.cache
+vendors/CosyVoice/third_party/Matcha-TTS/nosetests.xml
+vendors/CosyVoice/third_party/Matcha-TTS/coverage.xml
+vendors/CosyVoice/third_party/Matcha-TTS/*.cover
+vendors/CosyVoice/third_party/Matcha-TTS/*.py,cover
+vendors/CosyVoice/third_party/Matcha-TTS/.hypothesis/
+vendors/CosyVoice/third_party/Matcha-TTS/.pytest_cache/
+
+# Translations
+vendors/CosyVoice/third_party/Matcha-TTS/*.mo
+vendors/CosyVoice/third_party/Matcha-TTS/*.pot
+
+# Django stuff:
+vendors/CosyVoice/third_party/Matcha-TTS/*.log
+vendors/CosyVoice/third_party/Matcha-TTS/local_settings.py
+vendors/CosyVoice/third_party/Matcha-TTS/db.sqlite3
+vendors/CosyVoice/third_party/Matcha-TTS/db.sqlite3-journal
+
+# Flask stuff:
+vendors/CosyVoice/third_party/Matcha-TTS/instance/
+vendors/CosyVoice/third_party/Matcha-TTS/.webassets-cache
+
+# Scrapy stuff:
+vendors/CosyVoice/third_party/Matcha-TTS/.scrapy
+
+# Sphinx documentation
+vendors/CosyVoice/third_party/Matcha-TTS/docs/_build/
+
+# PyBuilder
+vendors/CosyVoice/third_party/Matcha-TTS/target/
+
+# Jupyter Notebook
+vendors/CosyVoice/third_party/Matcha-TTS/.ipynb_checkpoints
+
+# IPython
+vendors/CosyVoice/third_party/Matcha-TTS/profile_default/
+vendors/CosyVoice/third_party/Matcha-TTS/ipython_config.py
+
+# pyenv
+vendors/CosyVoice/third_party/Matcha-TTS/.python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case of collaboration, if having platform-specific dependencies or dependencies
+#   having no cross-platform support, pipenv may install dependencies that don't work, or not
+#   install all needed dependencies.
+#Pipfile.lock
+
+# PEP 582; used by e.g. github.com/David-OConnor/pyflow
+vendors/CosyVoice/third_party/Matcha-TTS/__pypackages__/
+
+# Celery stuff
+vendors/CosyVoice/third_party/Matcha-TTS/celerybeat-schedule
+vendors/CosyVoice/third_party/Matcha-TTS/celerybeat.pid
+
+# SageMath parsed files
+vendors/CosyVoice/third_party/Matcha-TTS/*.sage.py
+
+# Environments
+vendors/CosyVoice/third_party/Matcha-TTS/.venv
+vendors/CosyVoice/third_party/Matcha-TTS/env/
+vendors/CosyVoice/third_party/Matcha-TTS/venv/
+vendors/CosyVoice/third_party/Matcha-TTS/ENV/
+vendors/CosyVoice/third_party/Matcha-TTS/env.bak/
+vendors/CosyVoice/third_party/Matcha-TTS/venv.bak/
+
+# Spyder project settings
+vendors/CosyVoice/third_party/Matcha-TTS/.spyderproject
+vendors/CosyVoice/third_party/Matcha-TTS/.spyproject
+
+# Rope project settings
+vendors/CosyVoice/third_party/Matcha-TTS/.ropeproject
+
+# mkdocs documentation
+vendors/CosyVoice/third_party/Matcha-TTS//site
+
+# mypy
+vendors/CosyVoice/third_party/Matcha-TTS/.mypy_cache/
+vendors/CosyVoice/third_party/Matcha-TTS/.dmypy.json
+vendors/CosyVoice/third_party/Matcha-TTS/dmypy.json
+
+# Pyre type checker
+vendors/CosyVoice/third_party/Matcha-TTS/.pyre/
+
+### VisualStudioCode
+vendors/CosyVoice/third_party/Matcha-TTS/.vscode/*
+vendors/CosyVoice/third_party/Matcha-TTS/!.vscode/settings.json
+vendors/CosyVoice/third_party/Matcha-TTS/!.vscode/tasks.json
+vendors/CosyVoice/third_party/Matcha-TTS/!.vscode/launch.json
+vendors/CosyVoice/third_party/Matcha-TTS/!.vscode/extensions.json
+vendors/CosyVoice/third_party/Matcha-TTS/*.code-workspace
+vendors/CosyVoice/third_party/Matcha-TTS/**/.vscode
+
+# JetBrains
+vendors/CosyVoice/third_party/Matcha-TTS/.idea/
+
+# Data & Models
+vendors/CosyVoice/third_party/Matcha-TTS/*.h5
+vendors/CosyVoice/third_party/Matcha-TTS/*.tar
+vendors/CosyVoice/third_party/Matcha-TTS/*.tar.gz
+
+# Lightning-Hydra-Template
+vendors/CosyVoice/third_party/Matcha-TTS/configs/local/default.yaml
+vendors/CosyVoice/third_party/Matcha-TTS/data/
+vendors/CosyVoice/third_party/Matcha-TTS/logs/
+vendors/CosyVoice/third_party/Matcha-TTS/.env
+
+# Aim logging
+vendors/CosyVoice/third_party/Matcha-TTS/.aim
+
+# Cython complied files
+vendors/CosyVoice/third_party/Matcha-TTS/matcha/utils/monotonic_align/core.c
+
+# Ignoring hifigan checkpoint
+vendors/CosyVoice/third_party/Matcha-TTS/generator_v1
+vendors/CosyVoice/third_party/Matcha-TTS/g_02500000
+vendors/CosyVoice/third_party/Matcha-TTS/gradio_cached_examples/
+vendors/CosyVoice/third_party/Matcha-TTS/synth_output/

@@ -1,60 +1,82 @@
-# === Этап сборки (builder) ===
-FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04 AS builder
+# syntax=docker/dockerfile:1
+
+ARG CUDA_IMAGE=nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04
+
+# =========================
+# builder
+# =========================
+FROM ${CUDA_IMAGE} AS builder
 LABEL authors="SynthVoiceRu"
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# Python 3.11 из deadsnakes + утилиты
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common \
-    ca-certificates \
+      software-properties-common ca-certificates \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-venv \
-    python3.11-distutils \
-    python3-pip \
-    git \
-    ffmpeg \
-    wget \
-    tar \
+      python3.11 python3.11-venv python3.11-distutils python3.11-dev \
+      build-essential gcc g++ pkg-config \
+      git ffmpeg \
+          libavcodec60 libavformat60 libavutil58 libavfilter9 libavdevice60 \
+      libswresample4 libswscale7 \
+      libgomp1 \
+      wget tar \
     && rm -rf /var/lib/apt/lists/*
 
-# venv
 RUN python3.11 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# pip tooling
-RUN pip install --no-cache-dir -U pip setuptools wheel
+RUN python -m pip install -U pip setuptools wheel
 
-# зависимости проекта
+WORKDIR /workspace/SynthVoiceRu
 
-RUN pip install --no-cache-dir \
-    svr_tts==0.11.1 \
-    soundfile librosa pydub pyloudnorm GPUtil pqdm \
-    onnx-asr[audio] audalign
+# максимум кэшируем зависимости
+COPY constraints.txt ./constraints.txt
+COPY vendors/CosyVoice/requirements.txt vendors/CosyVoice/requirements.txt
 
-RUN pip install --no-cache-dir chatterbox-tts
+# 1) Базовые pinned версии (всё под constraints)
+# torch/torchaudio — из cu130
+RUN python -m pip install -c constraints.txt \
+      --index-url https://download.pytorch.org/whl/cu130 \
+      torch==2.9.1+cu130 \
+      torchaudio==2.9.1+cu130 \
+      torchvision==0.24.1+cu130 \
+      torchcodec==0.9.1+cu130
 
-#обновим pytorch
-RUN pip uninstall -y torch torchvision torchaudio
-RUN pip install --upgrade --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+RUN python -m pip install -c constraints.txt \
+      numpy==2.0.2 protobuf==6.33.3 onnx==1.20.1
 
-#обновим onnx
-RUN pip uninstall -y onnxruntime onnxruntime-gpu || true
-RUN pip install -U flatbuffers numpy packaging protobuf sympy coloredlogs
-RUN pip install --pre --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/ onnxruntime-gpu --no-deps
+# ORT CUDA 13 nightly (wheel без deps), deps ставим отдельно и тоже под constraints
+RUN python -m pip install -c constraints.txt flatbuffers packaging sympy coloredlogs \
+    && python -m pip install -c constraints.txt --no-deps --pre \
+      --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/ \
+      onnxruntime-gpu==1.24.0.dev20260111001
 
-#решим конфликты после обновления
-RUN pip install --no-cache-dir --force-reinstall \
-    "numpy>=2.0,<2.4" \
-    "scipy>=1.13,<2" \
-    "numba<0.61" \
-    "llvmlite<0.44" \
-    "matplotlib>=3.10.8" \
-    "pyloudnorm"
+# FIX audalign on py3.11: ставим совместимые numba/llvmlite бинарниками
+RUN python -m pip install -c constraints.txt --only-binary=:all: \
+      numba==0.60.0 llvmlite==0.43.0
 
-RUN pip install --no-cache-dir -U pyloudnorm
+# 2) пакеты
+RUN python -m pip install -c constraints.txt \
+      soundfile librosa pydub pyloudnorm GPUtil pqdm \
+      "onnx-asr[audio]" \
+    && python -m pip install --no-deps audalign \
+    && python -m pip install -c constraints.txt \
+      svr_tts==0.11.2 \
+    && python -m pip install -c constraints.txt \
+      pyworld-prebuilt==0.3.5.post2 \
+    && python -m pip install -c constraints.txt  \
+      matcha-tts
+
+# CosyVoice зависимости (тоже под constraints)
+RUN python -m pip install -c constraints.txt \
+      --extra-index-url https://download.pytorch.org/whl/cu130 \
+      -r vendors/CosyVoice/requirements.txt
 
 # vgmstream-cli
 RUN wget -O /tmp/vgmstream-linux-cli.tar.gz \
@@ -65,42 +87,34 @@ RUN wget -O /tmp/vgmstream-linux-cli.tar.gz \
     && rm -f /tmp/vgmstream-linux-cli.tar.gz
 
 
-# === Этап выполнения (runtime) ===
-FROM nvidia/cuda:13.0.0-cudnn-runtime-ubuntu24.04 AS runtime
+# =========================
+# runtime
+# =========================
+FROM ${CUDA_IMAGE} AS runtime
 LABEL authors="SynthVoiceRu"
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Python 3.11 runtime
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common \
-    ca-certificates \
+      software-properties-common ca-certificates \
     && add-apt-repository ppa:deadsnakes/ppa \
     && apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-venv \
-    python3.11-distutils \
-    ffmpeg \
+      python3.11 python3.11-venv python3.11-distutils \
+      ffmpeg  \
+      libpython3.11 \
     && rm -rf /var/lib/apt/lists/*
 
-# CUDA libs
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
-
-
-RUN if [ ! -f /usr/local/cuda/lib64/libcudnn.so.9 ]; then \
-      ln -s /usr/local/cuda/lib64/libcudnn.so.8 /usr/local/cuda/lib64/libcudnn.so.9; \
-    fi
-
-# venv + vgmstream
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /usr/local/bin/vgmstream-cli /usr/local/bin/vgmstream-cli
 ENV PATH="/opt/venv/bin:$PATH"
 
-# init models (скрипт должен существовать в контексте сборки)
 COPY utils/init_models.py /workspace/SynthVoiceRu/utils/init_models.py
 RUN python3.11 /workspace/SynthVoiceRu/utils/init_models.py
 
-# код проекта
 WORKDIR /workspace/SynthVoiceRu
 COPY . /workspace/SynthVoiceRu
 

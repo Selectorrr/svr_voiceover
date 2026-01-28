@@ -10,7 +10,7 @@ from huggingface_hub import hf_hub_download
 from svr_tts import SVR_TTS
 
 from modules.AsrModel import AsrModel
-from modules.VcModel import VcModel
+from modules.VcCV3 import VcCV3
 
 
 class ModelFactory:
@@ -24,7 +24,8 @@ class ModelFactory:
     @cached_property
     def svr_tts(self) -> 'SVR_TTS':
         if self.config['vc_type'] == 'default':
-            vc_model = VcModel(self.config, torch.device(f"cuda:{self._get_device_id()}"))
+            vc_model = VcCV3(self.config, torch.device(f"cuda:{self._get_device_id()}"))
+            # vc_model = VcS3Gen(self.config, torch.device(f"cuda:{self._get_device_id()}"))
             vc_type = None
         else:
             vc_model = None
