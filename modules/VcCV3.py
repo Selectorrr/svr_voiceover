@@ -107,7 +107,7 @@ class VcCV3:
         return h.hexdigest()
 
     @staticmethod
-    def _fade_in_out(x: np.ndarray) -> np.ndarray:
+    def _fade_in_out(x: np.ndarray, is_in = True, is_out = False) -> np.ndarray:
         x = np.asarray(x, dtype=np.float32).copy()
         n = _FADE_SAMPLES
         if x.size < 2 * n:
@@ -115,9 +115,11 @@ class VcCV3:
         if n <= 0:
             return x
 
-        fade_in = np.linspace(0.0, 1.0, n, endpoint=False, dtype=np.float32)
-        fade_out = np.linspace(1.0, 0.0, n, endpoint=False, dtype=np.float32)
+        if is_in:
+            fade_in = np.linspace(0.0, 1.0, n, endpoint=False, dtype=np.float32)
+            x[:n] *= fade_in
 
-        x[:n] *= fade_in
-        x[-n:] *= fade_out
+        if is_out:
+            fade_out = np.linspace(1.0, 0.0, n, endpoint=False, dtype=np.float32)
+            x[-n:] *= fade_out
         return x

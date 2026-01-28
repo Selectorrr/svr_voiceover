@@ -21,13 +21,30 @@ class TextProcessor:
         else:
             return record['text'], False
 
-    def is_sound_word(self, sentence):
-        if sentence and 'да' in sentence.lower():
+    def is_sound_word(self, sentence, stop_words=None):
+        inclusions = {
+            'угу', 'а', 'эй', 'ох', 'ой', 'хм', 'ммм', 'а-а', 'ааа', 'ха', 'фу', 'бах', 'бдыщ', 'бум', 'о', 'упс',
+            'пфе', 'ай', 'хммм'
+        }
+
+        if stop_words is None:
+            stop_words = {'да', 'нет', 'ну', 'ага', 'так', 'ну-ка', 'спи', 'вот', 'не-а'}
+
+        if not sentence:
             return False
-        # Регулярное выражение для звуковых слов, учитывающее повторяющиеся и чередующиеся буквы
+
+        s_low = sentence.strip().lower()
+        s_low = re.sub(r'[–—]', '-', s_low)
+        s_norm = re.sub(r'^[\s\W_]+|[\s\W_]+$', '', s_low)
+        if s_norm in inclusions:
+            return True
+
+        s_low2 = sentence.lower()
+        if any(w in s_low2 for w in stop_words):
+            return False
+
         sound_pattern = re.compile(r'^(?:[А-Яа-я]{1,3}(?:[-–—][А-Яа-я]{1,3})+)[!?.…]*$')
 
-        # Убираем лишние пробелы и проверяем предложение
         sentence = sentence.strip()
         result = bool(sound_pattern.match(sentence))
         if result:
@@ -87,6 +104,8 @@ def is_tts_hallucination(text: str, target: str, threshold=0.75) -> bool:
 
     allowed = _allowed_l_errors(t_l, threshold)
     ok_l = abs(t_l - g_l) <= allowed
+    # if not ok_l:
+    #     print(f"ok_l {abs(t_l - g_l)} allowed = {allowed}")
 
     t_words = re.findall(r"\w+", t, flags=re.UNICODE)
     g_words = re.findall(r"\w+", g, flags=re.UNICODE)
@@ -97,7 +116,11 @@ def is_tts_hallucination(text: str, target: str, threshold=0.75) -> bool:
     g_first = g_words[0] if g_words else ""
 
     sim_last = similarity(t_last, g_last)
+    # if not sim_last >= threshold:
+    #     print(f"sim_last = {t_last} target: {g_last}")
     sim_first = similarity(t_first, g_first)
+    # if not sim_first >= threshold:
+    #     print(f"sim_first = {t_first} target {g_first}")
 
     is_sim = sim_last >= threshold and sim_first >= threshold
 

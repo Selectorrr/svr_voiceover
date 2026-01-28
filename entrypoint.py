@@ -24,9 +24,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='')
 
     parser.add_argument('--ext', type=str, default="wav", help='Формат результирующего аудио')
-    parser.add_argument('--tone_sample_len', type=int, default=7500, help='Длина сэмпла голоса')
+    parser.add_argument('--tone_sample_len', type=int, default=10000, help='Длина сэмпла голоса')
     parser.add_argument('--api_key', type=str, help='Ваш ключ доступа к api', required=True)
-    parser.add_argument('--batch_size', type=int, default=32, help='Размер батча')
+    parser.add_argument('--batch_size', type=int, default=24, help='Размер батча')
     parser.add_argument('--n_jobs', type=int, default=None, help='Количество воркеров')
     parser.add_argument('--csv_delimiter', type=str, default=',', help='Разделитель, использующийся в csv.')
     # По умолчанию MOS учитывается. Если нужно отключить — используйте --no_respect_mos.
