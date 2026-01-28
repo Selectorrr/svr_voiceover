@@ -111,11 +111,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /usr/local/bin/vgmstream-cli /usr/local/bin/vgmstream-cli
 ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/workspace/SynthVoiceRu/vendors/CosyVoice"
+
+WORKDIR /workspace/SynthVoiceRu
 
 COPY utils/init_models.py /workspace/SynthVoiceRu/utils/init_models.py
 RUN python3.11 /workspace/SynthVoiceRu/utils/init_models.py
+COPY utils/init_cv3.py /workspace/SynthVoiceRu/utils/init_cv3.py
+RUN python3.11 /workspace/SynthVoiceRu/utils/init_cv3.py
 
-WORKDIR /workspace/SynthVoiceRu
 COPY . /workspace/SynthVoiceRu
 
 ENTRYPOINT ["python3.11", "entrypoint.py"]

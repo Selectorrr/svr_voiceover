@@ -50,8 +50,6 @@ if __name__ == '__main__':
     parser.add_argument('--speed_clip_max', type=float, default=2.0, help='Максимальная скорость для клиппинга')
     parser.add_argument('--max_extra_speed', type=float, default=0.10, help='Процент на сколько можно ускорить речь при необходимости')
     parser.add_argument('--vc_type', type=str, default='default', help='Тип конверсии голоса')
-    parser.add_argument('--vc_default_alpha', type=float, default=0.6, help='Пропорция тембра к просодии для default конверсии')
-    parser.add_argument('--min_target_sec', type=float, default=3.0, help='Минимальная длина семпла для default конверсии')
     args = parser.parse_args()
 
     if args.n_jobs is None:

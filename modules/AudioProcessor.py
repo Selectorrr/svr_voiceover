@@ -209,10 +209,10 @@ class AudioProcessor:
             return False
         sim = similarity(text_ref, asr_result.text)
         result = sim >= threshold
-        if not result:
-            print(f"invalid sim: asr {asr_result.text} text: {text_ref}")
-        else:
-            print(f"valid sim")
+        # if not result:
+        #     print(f"invalid sim: asr {asr_result.text} text: {text_ref}")
+        # else:
+            # print(f"valid sim")
         return result
 
     @staticmethod
