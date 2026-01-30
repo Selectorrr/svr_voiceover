@@ -48,7 +48,18 @@ if __name__ == '__main__':
     parser.add_argument('--speed_adjust_step_pct', type=float, default=0.08, help='Шаг уточнения скорости Y (0.08 = 8%)')
     parser.add_argument('--speed_clip_min', type=float, default=0.5, help='Минимальная скорость для клиппинга')
     parser.add_argument('--speed_clip_max', type=float, default=2.0, help='Максимальная скорость для клиппинга')
-    parser.add_argument('--max_extra_speed', type=float, default=0.10, help='Процент на сколько можно ускорить речь при необходимости')
+
+    parser.add_argument('--max_extra_speed', type=float, default=0.15, help='Процент на сколько можно ускорить речь при необходимости')
+
+    parser.add_argument('--len_t_short', type=float, default=1.0, help='Реплики короче этого (сек) считаем короткими.')
+    parser.add_argument('--len_t_long', type=float, default=15.0, help='Реплики длиннее этого (сек) считаем длинными.')
+
+    parser.add_argument('--max_longer_pct_short', type=float, default=0.15, help='Для коротких: сколько максимум можно быть длиннее семпла (0.35 = 35%).')
+    parser.add_argument('--max_longer_pct_long', type=float, default=0.05, help='Для длинных: сколько максимум можно быть длиннее семпла (0.15 = 15%).')
+
+    parser.add_argument('--max_shorter_pct_short', type=float, default=0.15, help='Для коротких: сколько максимум можно быть короче семпла (0.25 = 25%).')
+    parser.add_argument('--max_shorter_pct_long', type=float, default=0.05, help='Для длинных: сколько максимум можно быть короче семпла (0.10 = 10%).')
+
     parser.add_argument('--vc_type', type=str, default='default', help='Тип конверсии голоса')
     args = parser.parse_args()
 

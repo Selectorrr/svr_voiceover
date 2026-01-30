@@ -57,18 +57,8 @@ RUN python -m pip install -c constraints.txt flatbuffers packaging sympy colored
       --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/ort-cuda-13-nightly/pypi/simple/ \
       onnxruntime-gpu==1.24.0.dev20260111001
 
-# FIX audalign on py3.11: ставим совместимые numba/llvmlite бинарниками
-RUN python -m pip install -c constraints.txt --only-binary=:all: \
-      numba==0.60.0 llvmlite==0.43.0
-
 # 2) пакеты
 RUN python -m pip install -c constraints.txt \
-      soundfile librosa pydub pyloudnorm GPUtil pqdm \
-      "onnx-asr[audio]" \
-    && python -m pip install --no-deps audalign \
-    && python -m pip install -c constraints.txt \
-      svr_tts==0.11.2 \
-    && python -m pip install -c constraints.txt \
       pyworld-prebuilt==0.3.5.post2 \
     && python -m pip install -c constraints.txt  \
       matcha-tts
@@ -94,8 +84,11 @@ FROM ${CUDA_IMAGE} AS runtime
 LABEL authors="SynthVoiceRu"
 
 ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PATH="/opt/venv/bin:$PATH" \
+    PYTHONPATH="/workspace/SynthVoiceRu/vendors/CosyVoice"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -110,16 +103,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /usr/local/bin/vgmstream-cli /usr/local/bin/vgmstream-cli
-ENV PATH="/opt/venv/bin:$PATH"
-ENV PYTHONPATH="/workspace/SynthVoiceRu/vendors/CosyVoice"
 
 WORKDIR /workspace/SynthVoiceRu
 
+COPY constraints.txt ./constraints.txt
+COPY requirements.txt ./requirements.txt
+RUN python -m pip install -c constraints.txt -r requirements.txt
+
 COPY utils/init_models.py /workspace/SynthVoiceRu/utils/init_models.py
-RUN python3.11 /workspace/SynthVoiceRu/utils/init_models.py
+RUN python /workspace/SynthVoiceRu/utils/init_models.py
 COPY utils/init_cv3.py /workspace/SynthVoiceRu/utils/init_cv3.py
-RUN python3.11 /workspace/SynthVoiceRu/utils/init_cv3.py
+RUN python /workspace/SynthVoiceRu/utils/init_cv3.py
+
+RUN python -m pip install -c constraints.txt \
+      svr_tts==0.11.3
 
 COPY . /workspace/SynthVoiceRu
 
-ENTRYPOINT ["python3.11", "entrypoint.py"]
+ENTRYPOINT ["python", "entrypoint.py"]

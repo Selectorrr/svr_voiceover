@@ -31,13 +31,34 @@ class ModelFactory:
             vc_model = None
             vc_type = self.config['vc_type']
 
-        result = SVR_TTS(self.config['api_key'], providers=self.config["providers"],
-                      provider_options=self._get_provider_opts(), user_models_dir=self.config['user_models_dir'],reinit_every=self.config['reinit_every'], prosody_cond=self.config['prosody_cond'],
-                         vc_func=vc_model, vc_type=vc_type, min_prosody_len=self.config['min_prosody_len'],                         speed_search_attempts=self.config['speed_search_attempts'],
-                         speed_match_tolerance_pct=self.config['max_extra_speed'],
-                         speed_clip_min=self.config['speed_clip_min'],
-                         speed_clip_max=self.config['speed_clip_max'],
-                         speed_adjust_step_pct=self.config['speed_adjust_step_pct'])
+        result = SVR_TTS(
+            self.config['api_key'],
+            providers=self.config["providers"],
+            provider_options=self._get_provider_opts(),
+            user_models_dir=self.config['user_models_dir'],
+            reinit_every=self.config['reinit_every'],
+            prosody_cond=self.config['prosody_cond'],
+
+            vc_func=vc_model,
+            vc_type=vc_type,
+            min_prosody_len=self.config['min_prosody_len'],
+
+            # автоподбор скорости
+            speed_search_attempts=self.config['speed_search_attempts'],
+            speed_clip_min=self.config['speed_clip_min'],
+            speed_clip_max=self.config['speed_clip_max'],
+            speed_adjust_step_pct=self.config['speed_adjust_step_pct'],
+
+            # допуски по длительности (зависят от длины реплики)
+            len_t_short=self.config['len_t_short'],
+            len_t_long=self.config['len_t_long'],
+
+            max_longer_pct_short=self.config['max_longer_pct_short'],
+            max_longer_pct_long=self.config['max_longer_pct_long'],
+
+            max_shorter_pct_short=self.config['max_shorter_pct_short'],
+            max_shorter_pct_long=self.config['max_shorter_pct_long'],
+        )
         return result
 
 
