@@ -58,6 +58,8 @@ class ModelFactory:
 
             max_shorter_pct_short=self.config['max_shorter_pct_short'],
             max_shorter_pct_long=self.config['max_shorter_pct_long'],
+
+            put_yo=self.config['put_yo']
         )
         return result
 

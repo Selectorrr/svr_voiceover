@@ -61,6 +61,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_shorter_pct_long', type=float, default=0.05, help='Для длинных: сколько максимум можно быть короче семпла (0.10 = 10%).')
 
     parser.add_argument('--vc_type', type=str, default='default', help='Тип конверсии голоса')
+    parser.add_argument('--put_yo', type=bool, required=True, help='Не расставлять букву ё в тексте')
     args = parser.parse_args()
 
     if args.n_jobs is None:
