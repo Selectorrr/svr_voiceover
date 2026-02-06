@@ -15,6 +15,14 @@
 import os
 from typing import Generator
 import torch
+
+
+def _normalize_device(device):
+    # В этом проекте device всегда передаётся явно (например torch.device('cuda:1')).
+    # Никаких фолбэков/автовыбора.
+    if device is None:
+        raise ValueError("device must be provided explicitly, e.g. torch.device('cuda:0')")
+    return device if isinstance(device, torch.device) else torch.device(str(device))
 import numpy as np
 import threading
 import time
@@ -32,8 +40,9 @@ class CosyVoiceModel:
                  llm: torch.nn.Module,
                  flow: torch.nn.Module,
                  hift: torch.nn.Module,
-                 fp16: bool = False):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                 fp16: bool = False,
+                 device=None):
+        self.device = _normalize_device(device)
         self.llm = llm
         self.flow = flow
         self.hift = hift
@@ -248,8 +257,9 @@ class CosyVoice2Model(CosyVoiceModel):
                  llm: torch.nn.Module,
                  flow: torch.nn.Module,
                  hift: torch.nn.Module,
-                 fp16: bool = False):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                 fp16: bool = False,
+                 device=None):
+        self.device = _normalize_device(device)
         self.llm = llm
         self.flow = flow
         self.hift = hift
@@ -395,8 +405,9 @@ class CosyVoice3Model(CosyVoice2Model):
                  llm: torch.nn.Module,
                  flow: torch.nn.Module,
                  hift: torch.nn.Module,
-                 fp16: bool = False):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                 fp16: bool = False,
+                 device=None):
+        self.device = _normalize_device(device)
         self.llm = llm
         self.flow = flow
         self.hift = hift

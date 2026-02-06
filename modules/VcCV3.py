@@ -31,10 +31,15 @@ _FADE_SAMPLES = int(24000 * 0.1)  # 1200
 
 
 class VcCV3:
-    def __init__(self, config, device):
+    def __init__(self, config, device, providers, provider_options):
         self.config = config
         self.device = device
-        self.vc = AutoModel(model_dir='pretrained_models/Fun-CosyVoice3-0.5B')
+        self.providers = providers or self.config.get("providers")
+        self.provider_options = provider_options
+        self.vc = AutoModel(model_dir='pretrained_models/Fun-CosyVoice3-0.5B',
+                           device=self.device,
+                           providers=self.providers,
+                           provider_options=self.provider_options)
 
         self.cache_dir = Path("workspace/voices/timbre_cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)

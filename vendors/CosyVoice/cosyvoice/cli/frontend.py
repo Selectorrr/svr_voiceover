@@ -29,23 +29,40 @@ from cosyvoice.utils.frontend_utils import contains_chinese, replace_blank, repl
 
 class CosyVoiceFrontEnd:
 
-    def __init__(self,
-                 get_tokenizer: Callable,
-                 feat_extractor: Callable,
-                 campplus_model: str,
-                 speech_tokenizer_model: str,
-                 spk2info: str = '',
-                 allowed_special: str = 'all'):
+    def __init__(
+            self,
+            get_tokenizer: Callable,
+            feat_extractor: Callable,
+            campplus_model: str,
+            speech_tokenizer_model: str,
+            spk2info: str,
+            allowed_special: str,
+            device: torch.device | str,
+            providers: list[str],
+            provider_options: list[dict],
+    ):
         self.tokenizer = get_tokenizer()
         self.feat_extractor = feat_extractor
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # Device is used for torch tensors; ONNX Runtime device selection is controlled via providers/provider_options.
+        self.device = torch.device(device) if not isinstance(device, torch.device) else device
         option = onnxruntime.SessionOptions()
         option.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
         option.intra_op_num_threads = 1
-        self.campplus_session = onnxruntime.InferenceSession(campplus_model, sess_options=option, providers=["CPUExecutionProvider"])
-        self.speech_tokenizer_session = onnxruntime.InferenceSession(speech_tokenizer_model, sess_options=option,
-                                                                     providers=["CUDAExecutionProvider" if torch.cuda.is_available() else
-                                                                                "CPUExecutionProvider"])
+
+        self.providers = providers
+        self.provider_options = provider_options
+        self.campplus_session = onnxruntime.InferenceSession(
+            campplus_model,
+            sess_options=option,
+            providers=self.providers,
+            provider_options=self.provider_options,
+        )
+        self.speech_tokenizer_session = onnxruntime.InferenceSession(
+            speech_tokenizer_model,
+            sess_options=option,
+            providers=self.providers,
+            provider_options=self.provider_options,
+        )
         if os.path.exists(spk2info):
             self.spk2info = torch.load(spk2info, map_location=self.device, weights_only=True)
         else:

@@ -24,7 +24,9 @@ class ModelFactory:
     @cached_property
     def svr_tts(self) -> 'SVR_TTS':
         if self.config['vc_type'] == 'default':
-            vc_model = VcCV3(self.config, torch.device(f"cuda:{self._get_device_id()}"))
+            vc_model = VcCV3(self.config, torch.device(f"cuda:{self._get_device_id()}"),
+                             providers=self.config["providers"],
+                             provider_options=self._get_provider_opts())
             # vc_model = VcS3Gen(self.config, torch.device(f"cuda:{self._get_device_id()}"))
             vc_type = None
         else:
