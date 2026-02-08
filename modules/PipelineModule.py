@@ -55,30 +55,28 @@ class PipelineModule:
                 rtrim_top_db=15,
                 stress_exclusions=self.csv.load_stress_exclusions()
             )
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
             all_waves = [None] * len(inputs)
 
-        result = []
+        result = [None] * len(inputs)
 
         for i, full_wave in enumerate(all_waves):
-            input = inputs[i]
-
-            is_valid = None
-
             if full_wave is None:
                 continue
 
+            is_valid = None
             try:
                 try:
-                    is_valid = self.audio.validate(full_wave, factory.svr_tts.OUTPUT_SR, input.text, self.iteration)
+                    is_valid = self.audio.validate(
+                        full_wave, factory.svr_tts.OUTPUT_SR, inputs[i].text, self.iteration
+                    )
                 except Exception:
                     traceback.print_exc()
-
             except Exception:
                 traceback.print_exc()
 
-            result.append(full_wave if is_valid else None)
+            result[i] = full_wave if is_valid else None
 
         return result
 

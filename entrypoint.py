@@ -19,6 +19,15 @@ def get_def_providers():
     else:
         return ["CPUExecutionProvider"]
 
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    v = v.strip().lower()
+    if v in ("1", "true", "t", "yes", "y", "on"):
+        return True
+    if v in ("0", "false", "f", "no", "n", "off"):
+        return False
+    raise argparse.ArgumentTypeError(f"bool expected, got: {v}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='')
@@ -61,7 +70,8 @@ if __name__ == '__main__':
     parser.add_argument('--max_shorter_pct_long', type=float, default=0.05, help='Для длинных: сколько максимум можно быть короче семпла (0.10 = 10%).')
 
     parser.add_argument('--vc_type', type=str, default='default', help='Тип конверсии голоса')
-    parser.add_argument('--put_yo', type=bool, required=True, help='Не расставлять букву ё в тексте')
+    parser.add_argument('--put_yo', type=str2bool, required=True,
+                        help='Ставить букву ё в тексте (true/false)')
     args = parser.parse_args()
 
     if args.n_jobs is None:
