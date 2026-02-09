@@ -1,13 +1,14 @@
 import csv
 import traceback
+from functools import partial
 from multiprocessing import get_context
 from pathlib import Path
 
-import librosa
 import numpy
 import onnxruntime
 from pqdm.processes import pqdm
 from svr_tts.core import SynthesisInput
+from tqdm.auto import tqdm as _tqdm
 
 from modules.AudioProcessor import AudioProcessor
 from modules.CsvProcessor import CsvProcessor
@@ -22,11 +23,29 @@ FADE_LEN = int(0.1 * OUTPUT_SR)
 
 onnxruntime.set_default_logger_severity(3)
 factory = None
+_progress_counter = None
 
 
-def _worker_init(config):
-    global factory
+def _worker_init(config, progress_counter=None):
+    """Initializer for pqdm workers."""
+    global factory, _progress_counter
     factory = ModelFactory(config)
+    _progress_counter = progress_counter
+
+
+class _CharSyncTqdm(_tqdm):
+    """tqdm that syncs its current position from a shared counter."""
+
+    def __init__(self, *args, progress_counter=None, **kwargs):
+        self._c = progress_counter
+        super().__init__(*args, **kwargs)
+
+    def update(self, n=1):
+        if self._c is None:
+            return super().update(n)
+        self.n = self._c.value
+        self.refresh()
+        return True
 
 
 class PipelineModule:
@@ -112,7 +131,8 @@ class PipelineModule:
         results = self._efficient_audio_generation(vo_items)
         return results
 
-    def _voice_over_record(self, records):
+    def _voice_over_record(self, batch):
+        records, batch_chars = batch
         """
             Озвучивает группу записей
         """
@@ -144,6 +164,9 @@ class PipelineModule:
             }
             vo_items.append(vo_item)
         if not len(vo_items):
+            if _progress_counter is not None and batch_chars:
+                with _progress_counter.get_lock():
+                    _progress_counter.value += batch_chars
             return
         # Озвучиваем батч
         results = self._voice_over_items(vo_items)
@@ -172,6 +195,11 @@ class PipelineModule:
                 parameters=parameters
             )
 
+        # Обновляем общий прогресс по символам (один раз на батч)
+        if _progress_counter is not None and batch_chars:
+                with _progress_counter.get_lock():
+                    _progress_counter.value += batch_chars
+
     def run(self):
         # Найдем все строки что нужно озвучить с учетом разных версий файлов
         todo_records, all_records = self.csv.find_changed_text_rows_csv()
@@ -181,14 +209,30 @@ class PipelineModule:
         while len(todo_records):
             fieldnames = todo_records[0].keys()
             # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
-            batches = [todo_records[i:i + self.config['batch_size']] for i in
-                       range(0, len(todo_records), self.config['batch_size'])]
+            raw_batches = [todo_records[i:i + self.config['batch_size']] for i in
+                           range(0, len(todo_records), self.config['batch_size'])]
+
+            # Считаем символы по батчам в родителе, чтобы не дёргать get_text в воркерах
+            batches = []
+            total_chars = 0
+            for b in raw_batches:
+                ch = 0
+                for r in b:
+                    try:
+                        t, _ = self.text.get_text(r)
+                        ch += len(t or "")
+                    except Exception:
+                        pass
+                batches.append((b, ch))
+                total_chars += ch
 
             mp_context = get_context('spawn')
 
+            progress_counter = mp_context.Value('L', 0)
+
             # если однопроцессный режим то надо вручную инициализировать модельки
             if self.config['n_jobs'] == 1:
-                _worker_init(self.config)
+                _worker_init(self.config, progress_counter)
 
             try:
                 pqdm(batches, self._voice_over_record,
@@ -196,8 +240,11 @@ class PipelineModule:
                      mp_context=mp_context,
                      smoothing=0,
                      desc='Общий прогресс',
+                     total=total_chars,
+                     unit='симв',
+                     tqdm_class=partial(_CharSyncTqdm, progress_counter=progress_counter),
                      initializer=_worker_init,
-                     initargs=(self.config,),
+                     initargs=(self.config, progress_counter),
                      position=0,
                      exception_behaviour='immediate',
                      dynamic_ncols=True
