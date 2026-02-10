@@ -4,7 +4,7 @@
 FROM selector/voiceover:env AS runtime
 
 RUN python -m pip install -c constraints.txt \
-      svr_tts==0.12.0
+      svr_tts==0.12.1
 
 COPY . /workspace/SynthVoiceRu
 
