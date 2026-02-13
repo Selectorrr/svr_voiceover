@@ -1,6 +1,7 @@
 import csv
+import threading
+import time
 import traceback
-from functools import partial
 from multiprocessing import get_context
 from pathlib import Path
 
@@ -8,7 +9,7 @@ import numpy
 import onnxruntime
 from pqdm.processes import pqdm
 from svr_tts.core import SynthesisInput
-from tqdm.auto import tqdm as _tqdm
+from tqdm.auto import tqdm
 
 from modules.AudioProcessor import AudioProcessor
 from modules.CsvProcessor import CsvProcessor
@@ -27,25 +28,9 @@ _progress_counter = None
 
 
 def _worker_init(config, progress_counter=None):
-    """Initializer for pqdm workers."""
     global factory, _progress_counter
     factory = ModelFactory(config)
     _progress_counter = progress_counter
-
-
-class _CharSyncTqdm(_tqdm):
-    """tqdm that syncs its current position from a shared counter."""
-
-    def __init__(self, *args, progress_counter=None, **kwargs):
-        self._c = progress_counter
-        super().__init__(*args, **kwargs)
-
-    def update(self, n=1):
-        if self._c is None:
-            return super().update(n)
-        self.n = self._c.value
-        self.refresh()
-        return True
 
 
 class PipelineModule:
@@ -60,10 +45,9 @@ class PipelineModule:
     def synthesize_batch_with_split(self, inputs: list[SynthesisInput]):
         job_n = ModelFactory.get_job_n()
 
-        # noinspection PyUnresolvedReferences
-        try:
-            all_waves = factory.svr_tts.synthesize(
-                inputs,
+        def _run(batch_inputs):
+            return factory.svr_tts.synthesize(
+                batch_inputs,
                 tqdm_kwargs={
                     'leave': False,
                     'smoothing': 0,
@@ -74,27 +58,33 @@ class PipelineModule:
                 rtrim_top_db=15,
                 stress_exclusions=self.csv.load_stress_exclusions()
             )
+
+        try:
+            all_waves = _run(inputs)
+
         except Exception:
             traceback.print_exc()
+
+            # fallback: пытаемся по одному, чтобы не терять весь батч
             all_waves = [None] * len(inputs)
+            for i, inp in enumerate(inputs):
+                try:
+                    one = _run([inp])
+                    all_waves[i] = one[0] if one else None
+                except Exception:
+                    traceback.print_exc()
+                    all_waves[i] = None
 
         result = [None] * len(inputs)
 
         for i, full_wave in enumerate(all_waves):
             if full_wave is None:
                 continue
-
-            is_valid = None
             try:
-                try:
-                    is_valid = self.audio.validate(
-                        full_wave, factory.svr_tts.OUTPUT_SR, inputs[i].text, self.iteration
-                    )
-                except Exception:
-                    traceback.print_exc()
+                is_valid = self.audio.validate(full_wave, factory.svr_tts.OUTPUT_SR, inputs[i].text, self.iteration)
             except Exception:
                 traceback.print_exc()
-
+                is_valid = False
             result[i] = full_wave if is_valid else None
 
         return result
@@ -164,6 +154,7 @@ class PipelineModule:
             }
             vo_items.append(vo_item)
         if not len(vo_items):
+            # Обновляем прогресс по символам даже если ничего не озвучили
             if _progress_counter is not None and batch_chars:
                 with _progress_counter.get_lock():
                     _progress_counter.value += batch_chars
@@ -195,10 +186,10 @@ class PipelineModule:
                 parameters=parameters
             )
 
-        # Обновляем общий прогресс по символам (один раз на батч)
+        # Обновляем прогресс по символам (один раз на батч)
         if _progress_counter is not None and batch_chars:
-                with _progress_counter.get_lock():
-                    _progress_counter.value += batch_chars
+            with _progress_counter.get_lock():
+                _progress_counter.value += batch_chars
 
     def run(self):
         # Найдем все строки что нужно озвучить с учетом разных версий файлов
@@ -212,7 +203,7 @@ class PipelineModule:
             raw_batches = [todo_records[i:i + self.config['batch_size']] for i in
                            range(0, len(todo_records), self.config['batch_size'])]
 
-            # Считаем символы по батчам в родителе, чтобы не дёргать get_text в воркерах
+            # Считаем символы по батчам в родителе (для отдельного прогресс-бара)
             batches = []
             total_chars = 0
             for b in raw_batches:
@@ -227,31 +218,51 @@ class PipelineModule:
                 total_chars += ch
 
             mp_context = get_context('spawn')
-
             progress_counter = mp_context.Value('L', 0)
 
             # если однопроцессный режим то надо вручную инициализировать модельки
             if self.config['n_jobs'] == 1:
                 _worker_init(self.config, progress_counter)
 
+            stop_evt = threading.Event()
+
+            def _watch_chars():
+                last = 0
+                with tqdm(total=total_chars, desc='Общий прогресс', unit='симв', smoothing=0,
+                          dynamic_ncols=True, position=0, leave=True) as pbar:
+                    while not stop_evt.is_set():
+                        cur = progress_counter.value
+                        if cur > last:
+                            pbar.update(cur - last)
+                            last = cur
+                        time.sleep(0.2)
+                    # финальный добор
+                    cur = progress_counter.value
+                    if cur > last:
+                        pbar.update(cur - last)
+
+            t = threading.Thread(target=_watch_chars, daemon=True)
+            t.start()
+
             try:
                 pqdm(batches, self._voice_over_record,
                      n_jobs=self.config['n_jobs'],
                      mp_context=mp_context,
                      smoothing=0,
-                     desc='Общий прогресс',
-                     total=total_chars,
-                     unit='симв',
-                     tqdm_class=partial(_CharSyncTqdm, progress_counter=progress_counter),
+                     desc='Общий прогресс (батчи)',
                      initializer=_worker_init,
                      initargs=(self.config, progress_counter),
-                     position=0,
+                     position=1,
                      exception_behaviour='immediate',
-                     dynamic_ncols=True
-                     )
+                     dynamic_ncols=True,
+            disable=True
+        )
             except AssertionError as e:
                 # Неисправимая ошибка, может кончился баланс, завершаем работу
                 print(e)
+            finally:
+                stop_evt.set()
+                t.join()
 
             todo_records, all_records = self.csv.find_changed_text_rows_csv()
             todo_records = sorted(todo_records,
