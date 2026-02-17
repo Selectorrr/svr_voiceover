@@ -13,6 +13,7 @@ from tqdm.auto import tqdm
 
 from modules.AudioProcessor import AudioProcessor
 from modules.CsvProcessor import CsvProcessor
+from modules.DedupCsv import DedupCsv
 from modules.ModelFactory import ModelFactory
 from modules.SpeakerProcessor import SpeakerProcessor
 from modules.TextProcessor import TextProcessor
@@ -126,18 +127,38 @@ class PipelineModule:
         """
             Озвучивает группу записей
         """
+
+        dedup = DedupCsv(self.config.get('dedup_csv', 'workspace/dedup.csv'))
+        dedup_map = dedup.load_map()
+
         vo_items = []
         for record in records:
             path = Path(f"workspace/resources/{record['audio']}")
+            # Определяем текст для озвучки
+
+            text, is_accented = self.text.get_text(record)
+            try:
+                sha = DedupCsv.sha256(path, text)
+            except Exception:
+                sha = None
+
+            if sha:
+                voiced_path = dedup_map.get(sha)
+                if voiced_path and Path(voiced_path).exists():
+                    dub_file = Path(f"workspace/dub/{record['audio']}")
+                    dub_file.parent.mkdir(parents=True, exist_ok=True)
+                    dub_file = Path(str(dub_file)).with_suffix(f".{self.config['ext']}")
+                    try:
+                        DedupCsv.link_or_copy(voiced_path, dub_file)
+                    except Exception:
+                        traceback.print_exc()
+                    continue
             # Прочитаем оригинальный аудио файл и его громкость для определения просодии
             try:
                 raw_wave_24k, meta, raw_wave, raw_sr = self.audio.load_audio_norm(str(path))
             except ValueError as e:
                 print(e)
                 continue
-            # Определяем текст для озвучки
-            text, is_accented = self.text.get_text(record)
-
             # Возьмем все строки которые произносит этот персонаж для того что-б определить его тембр
             # Подготовим сэмпл тембра голоса
             style_wave_24k = self.speaker.get_speaker_style(record['speaker'], raw_wave_24k)
@@ -149,6 +170,7 @@ class PipelineModule:
                 'meta': meta,
                 'style_wave_24k': style_wave_24k,
                 'path': record['audio'],
+                'sha256': sha,
                 'raw_wave': raw_wave,
                 'raw_sr': raw_sr
             }
@@ -185,6 +207,17 @@ class PipelineModule:
                 codec=codec,
                 parameters=parameters
             )
+
+            try:
+                sha = None
+                for it in vo_items:
+                    if it.get('path') == i_path:
+                        sha = it.get('sha256')
+                        break
+                if sha:
+                    dedup.append(sha, str(dub_file))
+            except Exception:
+                traceback.print_exc()
 
         # Обновляем прогресс по символам (один раз на батч)
         if _progress_counter is not None and batch_chars:

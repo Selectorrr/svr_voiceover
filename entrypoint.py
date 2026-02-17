@@ -60,6 +60,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--max_extra_speed', type=float, default=0.15, help='Процент на сколько можно ускорить речь при необходимости')
 
+    parser.add_argument('--dedup_csv', type=str, default='workspace/dedup.csv',
+                        help='Путь до dedup.csv (sha256;path_to_voiced_file)')
+
     parser.add_argument('--len_t_short', type=float, default=1.0, help='Реплики короче этого (сек) считаем короткими.')
     parser.add_argument('--len_t_long', type=float, default=15.0, help='Реплики длиннее этого (сек) считаем длинными.')
 
