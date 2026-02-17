@@ -109,7 +109,8 @@ class PipelineModule:
                 continue
             # собираем результаты и одновременно сопоставляем с исходной громкостью и файлом
             vo_item = vo_items[idx]
-            results.append((wave, factory.svr_tts.OUTPUT_SR, vo_item['path'], vo_item['meta'], vo_item['raw_wave'], vo_item['raw_sr'],
+            results.append((wave, factory.svr_tts.OUTPUT_SR, vo_item['path'], vo_item['meta'], vo_item['raw_wave'],
+                            vo_item['raw_sr'],
                             vo_item['raw_wave_24k']))
         return results
 
@@ -131,6 +132,11 @@ class PipelineModule:
         dedup = DedupCsv(self.config.get('dedup_csv', 'workspace/dedup.csv'))
         dedup_map = dedup.load_map()
 
+        # дедуп внутри батча (чтобы не отправлять одинаковые задачи в TTS)
+        batch_seen = {}  # sha -> canonical audio path (record['audio'])
+        batch_dups = {}  # sha -> [dup audio paths]
+        sha_by_path = {}  # canonical audio path -> sha
+
         vo_items = []
         for record in records:
             path = Path(f"workspace/resources/{record['audio']}")
@@ -143,6 +149,7 @@ class PipelineModule:
                 sha = None
 
             if sha:
+                # 1) если уже озвучено ранее — просто копируем и идём дальше
                 voiced_path = dedup_map.get(sha)
                 if voiced_path and Path(voiced_path).exists():
                     dub_file = Path(f"workspace/dub/{record['audio']}")
@@ -153,6 +160,15 @@ class PipelineModule:
                     except Exception:
                         traceback.print_exc()
                     continue
+
+                # 2) дедуп внутри текущего батча — не добавляем второй раз в vo_items
+                if sha in batch_seen:
+                    batch_dups.setdefault(sha, []).append(record['audio'])
+                    continue
+
+                batch_seen[sha] = record['audio']
+                sha_by_path[record['audio']] = sha
+
             # Прочитаем оригинальный аудио файл и его громкость для определения просодии
             try:
                 raw_wave_24k, meta, raw_wave, raw_sr = self.audio.load_audio_norm(str(path))
@@ -208,16 +224,34 @@ class PipelineModule:
                 parameters=parameters
             )
 
+            # sha для этого результата (быстро через sha_by_path; fallback — как раньше)
+            sha = sha_by_path.get(i_path)
+            if sha is None:
+                try:
+                    for it in vo_items:
+                        if it.get('path') == i_path:
+                            sha = it.get('sha256')
+                            break
+                except Exception:
+                    sha = None
+
+            # дописываем в dedup.csv
             try:
-                sha = None
-                for it in vo_items:
-                    if it.get('path') == i_path:
-                        sha = it.get('sha256')
-                        break
                 if sha:
                     dedup.append(sha, str(dub_file))
             except Exception:
                 traceback.print_exc()
+
+            # размножаем результат на дубли внутри батча
+            if sha and sha in batch_dups:
+                for dup_audio in batch_dups.get(sha, []):
+                    try:
+                        dup_file = Path(f"workspace/dub/{dup_audio}")
+                        dup_file.parent.mkdir(parents=True, exist_ok=True)
+                        dup_file = Path(str(dup_file)).with_suffix(f".{self.config['ext']}")
+                        DedupCsv.link_or_copy(dub_file, dup_file)
+                    except Exception:
+                        traceback.print_exc()
 
         # Обновляем прогресс по символам (один раз на батч)
         if _progress_counter is not None and batch_chars:
