@@ -1,4 +1,5 @@
 import io
+import math
 import os
 import re
 import subprocess
@@ -17,6 +18,9 @@ from pydub.silence import detect_silence
 from modules.TextProcessor import similarity, is_tts_hallucination
 
 OUTPUT_SR = 22_050
+VALIDATION_THRESHOLD_START = 0.75
+VALIDATION_HALLUCINATION_THRESHOLD_START = 0.80
+VALIDATION_THRESHOLD_STEP = 0.05
 
 sound_file_formats = set(map(lambda i: f".{i}".lower(), soundfile.available_formats().keys()))
 
@@ -188,8 +192,28 @@ class AudioProcessor:
         mos = float(outs[0].reshape(-1).mean())
         return mos
 
-    def validate(self, wave, sr, text_ref, iteration, threshold=0.75, hallucination_threshold=0.80):
-        iteration_thr_delta = iteration * 0.05
+    @staticmethod
+    def get_validation_pass_count(
+            threshold=VALIDATION_THRESHOLD_START,
+            hallucination_threshold=VALIDATION_HALLUCINATION_THRESHOLD_START,
+            threshold_step=VALIDATION_THRESHOLD_STEP
+    ) -> int:
+        if threshold_step <= 0:
+            return 1
+        max_threshold = max(float(threshold), float(hallucination_threshold))
+        max_iteration = math.ceil(max(0.0, max_threshold) / threshold_step)
+        return max_iteration + 1
+
+    def validate(
+            self,
+            wave,
+            sr,
+            text_ref,
+            iteration,
+            threshold=VALIDATION_THRESHOLD_START,
+            hallucination_threshold=VALIDATION_HALLUCINATION_THRESHOLD_START
+    ):
+        iteration_thr_delta = iteration * VALIDATION_THRESHOLD_STEP
         threshold -= iteration_thr_delta
         hallucination_threshold -= iteration_thr_delta
         if bool(re.search(r'[A-Za-z0-9]', text_ref)):

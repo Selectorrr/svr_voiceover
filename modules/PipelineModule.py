@@ -290,6 +290,7 @@ class PipelineModule:
 
         mp_context = get_context('spawn')
         voiced_chars_counter = mp_context.Value('L', completed_chars)
+        max_validation_passes = self.audio.get_validation_pass_count()
 
         # если однопроцессный режим то надо вручную инициализировать модельки
         if self.config['n_jobs'] == 1:
@@ -297,11 +298,20 @@ class PipelineModule:
 
         stop_evt = threading.Event()
 
+        def _progress_desc():
+            current_pass = min(self.iteration + 1, max_validation_passes)
+            return f'Общий прогресс [{current_pass}/{max_validation_passes}]'
+
         def _watch_chars():
             last = completed_chars
-            with tqdm(total=total_chars, initial=completed_chars, desc='Общий прогресс', unit='симв', smoothing=0,
+            shown_pass = None
+            with tqdm(total=total_chars, initial=completed_chars, desc=_progress_desc(), unit='симв', smoothing=0,
                       dynamic_ncols=True, position=0, leave=True) as pbar:
                 while not stop_evt.is_set():
+                    current_pass = min(self.iteration + 1, max_validation_passes)
+                    if current_pass != shown_pass:
+                        pbar.set_description(_progress_desc(), refresh=False)
+                        shown_pass = current_pass
                     cur = voiced_chars_counter.value
                     if cur > last:
                         pbar.update(cur - last)
