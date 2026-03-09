@@ -25,13 +25,20 @@ FADE_LEN = int(0.1 * OUTPUT_SR)
 
 onnxruntime.set_default_logger_severity(3)
 factory = None
-_progress_counter = None
+_voiced_chars_counter = None
 
 
-def _worker_init(config, progress_counter=None):
-    global factory, _progress_counter
+def _worker_init(config, voiced_chars_counter=None):
+    global factory, _voiced_chars_counter
     factory = ModelFactory(config)
-    _progress_counter = progress_counter
+    _voiced_chars_counter = voiced_chars_counter
+
+
+def _add_shared_value(counter, value):
+    if counter is None or not value:
+        return
+    with counter.get_lock():
+        counter.value += value
 
 
 class PipelineModule:
@@ -124,7 +131,7 @@ class PipelineModule:
         return results
 
     def _voice_over_record(self, batch):
-        records, batch_chars = batch
+        records, _ = batch
         """
             Озвучивает группу записей
         """
@@ -134,15 +141,17 @@ class PipelineModule:
 
         # дедуп внутри батча (чтобы не отправлять одинаковые задачи в TTS)
         batch_seen = {}  # sha -> canonical audio path (record['audio'])
-        batch_dups = {}  # sha -> [dup audio paths]
+        batch_dups = {}  # sha -> [(dup audio path, text_len)]
         sha_by_path = {}  # canonical audio path -> sha
 
         vo_items = []
+        voiced_chars = 0
         for record in records:
             path = Path(f"workspace/resources/{record['audio']}")
             # Определяем текст для озвучки
 
             text, is_accented = self.text.get_text(record)
+            text_len = len(text or "")
             try:
                 sha = DedupCsv.sha256(path, text)
             except Exception:
@@ -157,13 +166,14 @@ class PipelineModule:
                     dub_file = Path(str(dub_file)).with_suffix(f".{self.config['ext']}")
                     try:
                         DedupCsv.link_or_copy(voiced_path, dub_file)
+                        voiced_chars += text_len
                     except Exception:
                         traceback.print_exc()
                     continue
 
                 # 2) дедуп внутри текущего батча — не добавляем второй раз в vo_items
                 if sha in batch_seen:
-                    batch_dups.setdefault(sha, []).append(record['audio'])
+                    batch_dups.setdefault(sha, []).append((record['audio'], text_len))
                     continue
 
                 batch_seen[sha] = record['audio']
@@ -187,18 +197,18 @@ class PipelineModule:
                 'style_wave_24k': style_wave_24k,
                 'path': record['audio'],
                 'sha256': sha,
+                'text_len': text_len,
                 'raw_wave': raw_wave,
                 'raw_sr': raw_sr
             }
             vo_items.append(vo_item)
         if not len(vo_items):
-            # Обновляем прогресс по символам даже если ничего не озвучили
-            if _progress_counter is not None and batch_chars:
-                with _progress_counter.get_lock():
-                    _progress_counter.value += batch_chars
+            _add_shared_value(_voiced_chars_counter, voiced_chars)
             return
         # Озвучиваем батч
         results = self._voice_over_items(vo_items)
+        success_paths = set()
+        text_len_by_path = {item['path']: item['text_len'] for item in vo_items}
 
         for dub, sr, i_path, i_meta, i_raw_wave, i_raw_sr, i_raw_wave_24k in results:
 
@@ -223,6 +233,8 @@ class PipelineModule:
                 codec=codec,
                 parameters=parameters
             )
+            success_paths.add(i_path)
+            voiced_chars += text_len_by_path.get(i_path, 0)
 
             # sha для этого результата (быстро через sha_by_path; fallback — как раньше)
             sha = sha_by_path.get(i_path)
@@ -244,101 +256,113 @@ class PipelineModule:
 
             # размножаем результат на дубли внутри батча
             if sha and sha in batch_dups:
-                for dup_audio in batch_dups.get(sha, []):
+                for dup_audio, dup_text_len in batch_dups.get(sha, []):
                     try:
                         dup_file = Path(f"workspace/dub/{dup_audio}")
                         dup_file.parent.mkdir(parents=True, exist_ok=True)
                         dup_file = Path(str(dup_file)).with_suffix(f".{self.config['ext']}")
                         DedupCsv.link_or_copy(dub_file, dup_file)
+                        voiced_chars += dup_text_len
                     except Exception:
                         traceback.print_exc()
 
-        # Обновляем прогресс по символам (один раз на батч)
-        if _progress_counter is not None and batch_chars:
-            with _progress_counter.get_lock():
-                _progress_counter.value += batch_chars
+        _add_shared_value(_voiced_chars_counter, voiced_chars)
 
     def run(self):
         # Найдем все строки что нужно озвучить с учетом разных версий файлов
         todo_records, all_records = self.csv.find_changed_text_rows_csv()
+        all_changed_records = self.csv.find_all_changed_text_rows_csv()
         todo_records = sorted(todo_records,
                               key=lambda d: len(set(self.text.get_text(d)[0])) * len(self.text.get_text(d)[0]),
                               reverse=True)
-        while len(todo_records):
-            fieldnames = todo_records[0].keys()
-            # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
-            raw_batches = [todo_records[i:i + self.config['batch_size']] for i in
-                           range(0, len(todo_records), self.config['batch_size'])]
+        todo_audio = {record['audio'] for record in todo_records}
+        total_chars = 0
+        completed_chars = 0
+        for record in all_changed_records:
+            try:
+                text, _ = self.text.get_text(record)
+                text_len = len(text or "")
+                total_chars += text_len
+                if record['audio'] not in todo_audio:
+                    completed_chars += text_len
+            except Exception:
+                pass
 
-            # Считаем символы по батчам в родителе (для отдельного прогресс-бара)
-            batches = []
-            total_chars = 0
-            for b in raw_batches:
-                ch = 0
-                for r in b:
-                    try:
-                        t, _ = self.text.get_text(r)
-                        ch += len(t or "")
-                    except Exception:
-                        pass
-                batches.append((b, ch))
-                total_chars += ch
+        mp_context = get_context('spawn')
+        voiced_chars_counter = mp_context.Value('L', completed_chars)
 
-            mp_context = get_context('spawn')
-            progress_counter = mp_context.Value('L', 0)
+        # если однопроцессный режим то надо вручную инициализировать модельки
+        if self.config['n_jobs'] == 1:
+            _worker_init(self.config, voiced_chars_counter)
 
-            # если однопроцессный режим то надо вручную инициализировать модельки
-            if self.config['n_jobs'] == 1:
-                _worker_init(self.config, progress_counter)
+        stop_evt = threading.Event()
 
-            stop_evt = threading.Event()
-
-            def _watch_chars():
-                last = 0
-                with tqdm(total=total_chars, desc='Общий прогресс', unit='симв', smoothing=0,
-                          dynamic_ncols=True, position=0, leave=True) as pbar:
-                    while not stop_evt.is_set():
-                        cur = progress_counter.value
-                        if cur > last:
-                            pbar.update(cur - last)
-                            last = cur
-                        time.sleep(0.2)
-                    # финальный добор
-                    cur = progress_counter.value
+        def _watch_chars():
+            last = completed_chars
+            with tqdm(total=total_chars, initial=completed_chars, desc='Общий прогресс', unit='симв', smoothing=0,
+                      dynamic_ncols=True, position=0, leave=True) as pbar:
+                while not stop_evt.is_set():
+                    cur = voiced_chars_counter.value
                     if cur > last:
                         pbar.update(cur - last)
+                        last = cur
+                    time.sleep(0.2)
+                # финальный добор
+                cur = voiced_chars_counter.value
+                if cur > last:
+                    pbar.update(cur - last)
 
+        t = None
+        if total_chars:
             t = threading.Thread(target=_watch_chars, daemon=True)
             t.start()
 
-            try:
+        try:
+            while len(todo_records):
+                # Что-б снизить нагрузку на api сервера токенизации разобьем записи на небольшие на группы
+                raw_batches = [todo_records[i:i + self.config['batch_size']] for i in
+                               range(0, len(todo_records), self.config['batch_size'])]
+
+                # Считаем символы по батчам в родителе (для отдельного прогресс-бара)
+                batches = []
+                for b in raw_batches:
+                    ch = 0
+                    for r in b:
+                        try:
+                            t_text, _ = self.text.get_text(r)
+                            ch += len(t_text or "")
+                        except Exception:
+                            pass
+                    batches.append((b, ch))
+
                 pqdm(batches, self._voice_over_record,
                      n_jobs=self.config['n_jobs'],
                      mp_context=mp_context,
                      smoothing=0,
                      desc='Общий прогресс (батчи)',
                      initializer=_worker_init,
-                     initargs=(self.config, progress_counter),
+                     initargs=(self.config, voiced_chars_counter),
                      position=1,
                      exception_behaviour='immediate',
                      dynamic_ncols=True,
-            disable=True
-        )
-            except AssertionError as e:
-                # Неисправимая ошибка, может кончился баланс, завершаем работу
-                print(e)
-            finally:
-                stop_evt.set()
+                     disable=True
+                )
+
+                todo_records, all_records = self.csv.find_changed_text_rows_csv()
+                todo_records = sorted(todo_records,
+                                      key=lambda d: len(set(self.text.get_text(d)[0])) * len(self.text.get_text(d)[0]),
+                                      reverse=True)
+
+                _write_todo_csv("workspace/todo_voiceover.csv", todo_records, self.config["csv_delimiter"])
+
+                self.iteration += 1
+        except AssertionError as e:
+            # Неисправимая ошибка, может кончился баланс, завершаем работу
+            print(e)
+        finally:
+            stop_evt.set()
+            if t is not None:
                 t.join()
-
-            todo_records, all_records = self.csv.find_changed_text_rows_csv()
-            todo_records = sorted(todo_records,
-                                  key=lambda d: len(set(self.text.get_text(d)[0])) * len(self.text.get_text(d)[0]),
-                                  reverse=True)
-
-            _write_todo_csv("workspace/todo_voiceover.csv", todo_records, self.config["csv_delimiter"])
-
-            self.iteration += 1
 
 def _write_todo_csv(path: str, records: list[dict], delimiter: str):
     cleaned = []

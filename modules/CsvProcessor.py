@@ -27,14 +27,17 @@ class CsvProcessor:
             # Если цифра не найдена, возвращаем 0
             return 0
 
-    def _filter_by_exists(self, records, all_records):
-
+    def _collect_existing_sets(self):
         resources = set(
             map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./').lower(),
                 glob('**/*.*', recursive=True, root_dir='workspace/resources')))
         dub = set(
             map(lambda i: f"{Path(i).parent}\\{Path(i).stem}".replace('\\', '/').removeprefix('./').lower(),
                 glob('**/*.*', recursive=True, root_dir='workspace/dub')))
+        return resources, dub
+
+    def _filter_by_exists(self, records, all_records):
+        resources, dub = self._collect_existing_sets()
 
         todo = set(resources) - set(dub)
 
@@ -59,10 +62,9 @@ class CsvProcessor:
         records_with_text = sorted(records_with_text, key=lambda i: i['audio'])
         return records_with_text, all_records
 
-    def find_changed_text_rows_csv(self):
+    def _find_changed_rows_csv(self):
         """
-        Находит csv файлы, свравнивает их содержимое и находит изменившиеся строки.
-        :return:
+        Возвращает измененные строки и все актуальные строки из набора версий без учета наличия dub.
         """
         all_version_files = glob("workspace/voiceover**.csv")
 
@@ -133,10 +135,31 @@ class CsvProcessor:
                     todo_rows.append(row)
                     previous_data[key] = row
 
-        todo_records, all_records = self._filter_by_exists(todo_rows, previous_data.values())
+        return todo_rows, list(previous_data.values())
+
+    def find_changed_text_rows_csv(self):
+        """
+        Находит csv файлы, свравнивает их содержимое и находит изменившиеся строки.
+        :return:
+        """
+        todo_rows, all_rows = self._find_changed_rows_csv()
+        todo_records, all_records = self._filter_by_exists(todo_rows, all_rows)
         todo_records = list(filter(lambda i: not self.text.is_sound_word(self.text.get_text(i)[0]), todo_records))
         all_records = list(filter(lambda i: not self.text.is_sound_word(self.text.get_text(i)[0]), all_records))
         return todo_records, all_records
+
+    def find_all_changed_text_rows_csv(self):
+        """
+        Возвращает все измененные строки, даже если для них уже есть dub-файл.
+        """
+        changed_rows, _ = self._find_changed_rows_csv()
+        resources, _ = self._collect_existing_sets()
+
+        records_with_text = [row for row in changed_rows if re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0])]
+        records_with_files = [row for row in records_with_text if
+                              str(Path(row['audio']).with_suffix('')).lower() in resources]
+        records_with_files = list(filter(lambda i: not self.text.is_sound_word(self.text.get_text(i)[0]), records_with_files))
+        return sorted(records_with_files, key=lambda i: i['audio'])
 
     @lru_cache
     def load_stress_exclusions(self, path='workspace/stress_dict.csv') -> dict[str, str]:
