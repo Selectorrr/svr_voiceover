@@ -15,6 +15,24 @@ class CsvProcessor:
             self.path_filter = config['path_filter'].replace('\\', '/').removeprefix('./').removeprefix('/')
         pass
 
+    @staticmethod
+    def _normalize_audio_path(audio):
+        raw_audio = str(audio or '').strip().replace('\\', '/')
+        if not raw_audio or raw_audio == '.':
+            return ''
+        return str(Path(raw_audio)).replace('\\', '/').removeprefix('./')
+
+    def _audio_key(self, audio):
+        normalized_audio = self._normalize_audio_path(audio)
+        if not normalized_audio:
+            return ''
+
+        path = Path(normalized_audio)
+        if not path.name:
+            return ''
+
+        return f"{path.parent}\\{path.stem}".replace('\\', '/').removeprefix('./').lower()
+
     def _extract_version_number(self, filename):
         # Получаем имя файла без пути и расширения
         name = Path(filename).stem
@@ -41,24 +59,27 @@ class CsvProcessor:
 
         todo = set(resources) - set(dub)
 
-        records_with_text = [row for row in records if re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0])]
-        print(f"Найдено {len(records_with_text)} записей содержащих руский текст из {len(records)}")
-        records_with_files = [row for row in records_with_text if
-                                   str(Path(row['audio']).with_suffix('')).lower() in resources]
+        records_with_text = [
+            row for row in records
+            if row.get('audio', '').strip()
+               and re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0])
+        ]
+        print(f"Найдено {len(records_with_text)} записей содержащих аудио и русский текст из {len(records)}")
+        records_with_files = [row for row in records_with_text if self._audio_key(row.get('audio')) in resources]
         if len(records_with_files) != len(records_with_text):
             print('Внимание в csv есть файлы которых нет а рабочей директории')
-            nf = [r for r in records if str(Path(r['audio']).with_suffix('')).lower() not in resources]
+            nf = [r for r in records_with_text if self._audio_key(r.get('audio')) not in resources]
             sel = nf[:5] + [r for r in nf[-5:] if r not in nf[:5]]
 
             print(f"Всего не найдено: {len(nf)}")
             for i, r in enumerate(sel, 1):
                 print(f"Пример: {i}) {r['audio']}")
-        todo_records_with_files = [row for row in records_with_text if
-                                   str(Path(row['audio']).with_suffix('')).lower() in todo]
+        todo_records_with_files = [row for row in records_with_text if self._audio_key(row.get('audio')) in todo]
         records_with_text = todo_records_with_files
         all_records = [row for row in all_records if
-                       re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0]) and str(
-                           Path(row['audio']).with_suffix('')).lower()in resources]
+                       row.get('audio', '').strip()
+                       and re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0])
+                       and self._audio_key(row.get('audio')) in resources]
         records_with_text = sorted(records_with_text, key=lambda i: i['audio'])
         return records_with_text, all_records
 
@@ -99,7 +120,9 @@ class CsvProcessor:
                     continue  # Пропускаем этот файл
 
                 for row in reader:
-                    row['audio'] = str(Path(row['audio'])).replace('\\', '/').removeprefix('./')
+                    row['audio'] = self._normalize_audio_path(row.get('audio'))
+                    if not row['audio']:
+                        continue
                     if self.path_filter and not row['audio'].startswith(self.path_filter):
                         continue
                     key = row['audio']
@@ -119,7 +142,9 @@ class CsvProcessor:
                 return [], []
 
             for row in reader:
-                row['audio'] = str(Path(row['audio'])).replace('\\', '/').removeprefix('./')
+                row['audio'] = self._normalize_audio_path(row.get('audio'))
+                if not row['audio']:
+                    continue
                 if self.path_filter and not row['audio'].startswith(self.path_filter):
                     continue
                 key = row['audio']
@@ -155,9 +180,11 @@ class CsvProcessor:
         changed_rows, _ = self._find_changed_rows_csv()
         resources, _ = self._collect_existing_sets()
 
-        records_with_text = [row for row in changed_rows if re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0])]
-        records_with_files = [row for row in records_with_text if
-                              str(Path(row['audio']).with_suffix('')).lower() in resources]
+        records_with_text = [
+            row for row in changed_rows
+            if row.get('audio', '').strip() and re.search(r'[А-Яа-яЁё]', self.text.get_text(row)[0])
+        ]
+        records_with_files = [row for row in records_with_text if self._audio_key(row.get('audio')) in resources]
         records_with_files = list(filter(lambda i: not self.text.is_sound_word(self.text.get_text(i)[0]), records_with_files))
         return sorted(records_with_files, key=lambda i: i['audio'])
 

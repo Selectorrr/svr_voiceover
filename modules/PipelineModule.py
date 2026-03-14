@@ -305,7 +305,7 @@ class PipelineModule:
         def _watch_chars():
             last = completed_chars
             shown_pass = None
-            with tqdm(total=total_chars, initial=completed_chars, desc=_progress_desc(), unit='симв', smoothing=0,
+            with tqdm(total=total_chars, initial=completed_chars, desc=_progress_desc(), unit='симв',
                       dynamic_ncols=True, position=0, leave=True) as pbar:
                 while not stop_evt.is_set():
                     current_pass = min(self.iteration + 1, max_validation_passes)
@@ -366,6 +366,8 @@ class PipelineModule:
                 _write_todo_csv("workspace/todo_voiceover.csv", todo_records, self.config["csv_delimiter"])
 
                 self.iteration += 1
+                if self.iteration >= max_validation_passes:
+                    break
         except AssertionError as e:
             # Неисправимая ошибка, может кончился баланс, завершаем работу
             print(e)
