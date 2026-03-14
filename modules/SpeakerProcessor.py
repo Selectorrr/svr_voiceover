@@ -10,7 +10,11 @@ class SpeakerProcessor:
             Составляет сэмпл для опеределния тембра голоса и сохраняет его на диск
         """
 
-        voice = Path(f"workspace/voices/{speaker}.wav")
+        speaker_name = (speaker or "").strip()
+        if not speaker_name:
+            return self.audio.build_speaker_sample(None, wave_24k)
+
+        voice = Path(f"workspace/voices/{speaker_name}.wav")
 
         style_wave_24k = self.audio.build_speaker_sample(voice, wave_24k)
 

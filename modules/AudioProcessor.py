@@ -127,7 +127,7 @@ class AudioProcessor:
         wave, sr = self.to_ndarray(segment)
         return wave, meta, raw_wave, raw_sr
 
-    def build_speaker_sample(self, voice_path: Path, wave_24k, mos_good=3.5, mos_bad=2):
+    def build_speaker_sample(self, voice_path: Path | None, wave_24k, mos_good=3.5, mos_bad=2):
         if self.is_respect_mos:
             mos = self.calc_mos(wave_24k, 24_000)
         else:
@@ -138,6 +138,11 @@ class AudioProcessor:
             segment = self.to_segment(wave_24k, 24_000)
             segment = self._fix_len(segment)
             # вернем как есть без подмены на качественный
+            return self.to_ndarray(segment)[0]
+
+        if voice_path is None:
+            segment = self.to_segment(wave_24k, 24_000)
+            segment = self._fix_len(segment)
             return self.to_ndarray(segment)[0]
 
         lock_path = str(voice_path) + ".lock"
